@@ -1,0 +1,15 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+httpx>=0.27,<1
+pdfplumber>=0.11,<1
+pymupdf>=1.24,<2
+google-genai>=1,<2
+pydantic>=2.8,<3
+python-multipart>=0.0.9
+python-dotenv>=1,<2
+pytest>=8,<9
+truststore>=0.10
+sqlglot>=30,<31
+tree-sitter>=0.25,<0.27
+tree-sitter-typescript>=0.23,<0.24
+PyYAML>=6,<7

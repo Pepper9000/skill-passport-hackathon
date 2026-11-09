@@ -1,0 +1,104 @@
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.services.growth_and_kit import parse_growth_and_kit
+from app.services.role_match import match_role
+
+
+def test_role_match_distinguishes_met_partial_and_claimed_missing() -> None:
+    skills = [
+        {
+            "skill_id": "python",
+            "level": "Applied",
+            "evidence": [{"type": "code"}],
+        },
+        {
+            "skill_id": "docker",
+            "level": "Used",
+            "evidence": [{"type": "config"}],
+        },
+        {"skill_id": "sql", "level": "Claimed", "evidence": []},
+    ]
+    role = {
+        "id": "test-role",
+        "name": "Test role",
+        "requirements": [
+            {"skill_id": "docker", "importance": "must", "min_level": "Applied"},
+            {"skill_id": "python", "importance": "must", "min_level": "Applied"},
+            {"skill_id": "sql", "importance": "nice", "min_level": "Used"},
+        ],
+    }
+    result = match_role(skills, role)
+    assert result["met"] == 1
+    assert result["total"] == 3
+    assert result["mandatory_met"] == 1
+    assert result["mandatory_total"] == 2
+    assert result["mandatory_gaps"] == 1
+    assert result["optional_met"] == 0
+    assert result["optional_total"] == 1
+    assert result["headline"] == "1 of 2 mandatory requirements met (1 mandatory gap)"
+    assert [item["status"] for item in result["requirements"]] == [
+        "partial", "met", "missing",
+    ]
+    assert result["requirements"][0]["reason"].startswith("Requires Applied; found Used")
+    assert result["requirements"][2]["student_level"] == "Claimed"
+
+
+def test_role_match_headline_when_all_mandatory_met() -> None:
+    skills = [
+        {"skill_id": "python", "level": "Applied", "evidence": [{"type": "code"}]},
+        {"skill_id": "docker", "level": "Applied", "evidence": [{"type": "code"}]},
+    ]
+    role = {
+        "id": "test-role",
+        "name": "Test role",
+        "requirements": [
+            {"skill_id": "docker", "importance": "must", "min_level": "Applied"},
+            {"skill_id": "python", "importance": "must", "min_level": "Applied"},
+            {"skill_id": "sql", "importance": "nice", "min_level": "Used"},
+        ],
+    }
+    result = match_role(skills, role)
+    assert result["mandatory_met"] == 2
+    assert result["mandatory_total"] == 2
+    assert result["mandatory_gaps"] == 0
+    assert result["headline"] == "All 2 mandatory requirements met (0/1 optional met)"
+
+
+def test_missing_requirement_reason_includes_coverage_counts() -> None:
+    role = {"id": "r", "name": "R", "requirements": [
+        {"skill_id": "docker", "importance": "must", "min_level": "Used"},
+    ]}
+    coverage = {"source_files_read": 28, "source_files_total": 168}
+    result = match_role([], role, coverage)
+    assert result["requirements"][0]["reason"] == (
+        "No evidence found in the analysed files (28 of 168 source files read)."
+    )
+    assert match_role([], role)["requirements"][0]["reason"] == "No evidence found in the analysed files."
+
+
+def test_unknown_role_is_an_explicit_error() -> None:
+    with pytest.raises(ValueError, match="Unknown target role"):
+        match_role([], "not-a-role")
+
+
+def test_growth_response_schema_requires_two_interview_questions() -> None:
+    valid = (
+        '{"growth_tasks":[{"skill_id":"docker","target_repo":"demo",'
+        '"task":"Add a Dockerfile and build the app in a clean image.",'
+        '"evidence_it_will_create":"The Dockerfile will show a reproducible container build."}],'
+        '"interview_kit":[{"skill_id":"flask","questions":['
+        '{"q":"Explain the Flask route at app.py lines 1-4.","good_answer_mentions":"Route handler and response shape."},'
+        '{"q":"How would you validate input in app.py lines 1-4?","good_answer_mentions":"Request validation and error handling."}]}]}'
+    )
+    result = parse_growth_and_kit(valid)
+    assert len(result.interview_kit[0].questions) == 2
+    with pytest.raises(ValueError):
+        parse_growth_and_kit(valid.replace(
+            '{"q":"How would you validate input in app.py lines 1-4?","good_answer_mentions":"Request validation and error handling."}',
+            "",
+        ))
