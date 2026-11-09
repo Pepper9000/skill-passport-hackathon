@@ -99,6 +99,10 @@ ENABLE_SQL_DEPTH = _feature_flag("ENABLE_SQL_DEPTH")
 ENABLE_SKILL_DEPTH = _feature_flag("ENABLE_SKILL_DEPTH")
 # Debug endpoints require explicit opt-in in every environment.
 ALLOW_DEBUG_ENDPOINTS = os.getenv("ALLOW_DEBUG_ENDPOINTS", "false").lower() in ("true", "1", "yes")
-CACHE_DIR = BASE_DIR / "cache"
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+CACHE_DIR = DATA_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-DATABASE_PATH = BASE_DIR / "skill_passport.db"
+
+DATABASE_PATH = DATA_DIR / "skill_passport.db"
