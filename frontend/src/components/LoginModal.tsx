@@ -64,7 +64,7 @@ export default function LoginModal() {
     if (isLoginModalOpen) {
       if (user) {
         setEmail(user.email);
-        setPassword(user.role === "recruiter" ? "recruiter2026" : "student2026");
+        setPassword(user.role === "recruiter" ? "" : "student2026");
       } else {
         setEmail("");
         setPassword("");
@@ -93,7 +93,7 @@ export default function LoginModal() {
   const handleAutoFill = (role: UserRole) => {
     const profile = DEMO_PROFILES[role];
     setEmail(profile.user.email);
-    setPassword(profile.passwordHint);
+    setPassword(profile.passwordHint ?? "");
     setLastAutoFilledRole(role);
     setErrorMessage("");
 
@@ -141,7 +141,7 @@ export default function LoginModal() {
           <div className="auth-autofill-hint" role="status">
             <CheckCircle2 size={15} />
             <span>
-              <strong>{lastAutoFilledRole === "recruiter" ? "Recruiter" : "Student"}</strong> credentials filled. Press <strong>Sign in</strong> to continue.
+              <strong>{lastAutoFilledRole === "recruiter" ? "Recruiter email" : "Student"}</strong> filled. {lastAutoFilledRole === "recruiter" ? "Enter the demo password to continue." : <>Press <strong>Sign in</strong> to continue.</>}
             </span>
           </div>
         )}

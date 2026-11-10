@@ -65,6 +65,11 @@ REQUIRE_RECRUITER_AUTH = (
 )
 # When set, the recruiter review endpoints require a matching X-Recruiter-Key header.
 RECRUITER_KEY = os.getenv("RECRUITER_KEY", "")
+# Optional public demo credentials. The account is read-only and never replaces
+# the individually configured production recruiter accounts above.
+DEMO_RECRUITER_USERNAME = "recruiter@techcorp.com"
+DEMO_RECRUITER_ID = "demo-recruiter"
+DEMO_RECRUITER_PASSWORD = os.getenv("DEMO_RECRUITER_PASSWORD", "")
 # Production uses individually named keys so one recruiter can be revoked without rotating
 # everyone else's credential. Example: {"recruiter-a":"<random secret>", ...}.
 _RECRUITER_ACCOUNTS_RAW = os.getenv("RECRUITER_ACCOUNTS", "")

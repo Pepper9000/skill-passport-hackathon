@@ -83,7 +83,7 @@ function StudentExcluded({ item, passportId }: { item: RejectedClaim; passportId
 }
 
 /** Recruiter: an excluded citation, with the student's request (if any) and "Mark reviewed". */
-function RecruiterExcluded({ item, request, onChanged }: { item: RejectedClaim; request?: ReviewRequest; onChanged?: () => void }) {
+function RecruiterExcluded({ item, request, onChanged, readOnly }: { item: RejectedClaim; request?: ReviewRequest; onChanged?: () => void; readOnly: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -110,9 +110,10 @@ function RecruiterExcluded({ item, request, onChanged }: { item: RejectedClaim; 
         <div className={`review-request review-${request.status}`}>
           <strong>Candidate requested a review · {new Date(request.created_at).toLocaleDateString()}</strong>
           {request.note ? <p>“{request.note}”</p> : <p className="muted">No note added.</p>}
-          {request.status === "open"
+          {request.status === "open" && !readOnly
             ? <button className="button button-light" onClick={markReviewed} disabled={busy}>{busy ? "Saving…" : "Mark reviewed"}</button>
-            : <p className="review-status"><Check size={12} /> Reviewed {request.reviewed_at ? new Date(request.reviewed_at).toLocaleDateString() : ""}</p>}
+            : request.status === "reviewed" && <p className="review-status"><Check size={12} /> Reviewed {request.reviewed_at ? new Date(request.reviewed_at).toLocaleDateString() : ""}</p>}
+          {request.status === "open" && readOnly && <p className="muted">Read-only demo account cannot update review requests.</p>}
           {error && <p className="notice-error">{error}</p>}
         </div>
       )}
@@ -137,13 +138,14 @@ function UnsupportedItem({ item, labels }: { item: RejectedClaim; labels?: Recor
  * Students see each citation that wasn't counted (with "Request review") and the AI's
  * unsupported claims; recruiters see every rejected and excluded claim, with review requests.
  */
-export default function RejectedClaims({ claims, audience, passportId = "", requests = [], onChanged, labels }: {
+export default function RejectedClaims({ claims, audience, passportId = "", requests = [], onChanged, labels, readOnly = false }: {
   claims: RejectedClaim[];
   audience: Audience;
   passportId?: string;
   requests?: ReviewRequest[];
   onChanged?: () => void;
   labels?: Record<string, string>;
+  readOnly?: boolean;
 }) {
   // "review" is the summary line older backends sent instead of individual items.
   const listed = claims.filter((item) => item.kind !== "review");
@@ -161,7 +163,7 @@ export default function RejectedClaims({ claims, audience, passportId = "", requ
         if (!isExcluded(item)) return <UnsupportedItem item={item} labels={labels} key={key} />;
         return audience === "student"
           ? <StudentExcluded item={item} passportId={passportId} key={key} />
-          : <RecruiterExcluded item={item} request={latestRequest(item)} onChanged={onChanged} key={key} />;
+          : <RecruiterExcluded item={item} request={latestRequest(item)} onChanged={onChanged} readOnly={readOnly} key={key} />;
       }) : <p className="muted">Nothing was rejected in this run.</p>}
       {claims.filter((item) => item.kind === "review").map((item) => <p className="muted review-summary" key="review">{item.reason}</p>)}
     </details>

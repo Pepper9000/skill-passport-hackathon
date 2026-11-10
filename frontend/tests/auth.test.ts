@@ -2,14 +2,22 @@
 import test from "node:test";
 import { DEMO_PROFILES, canAccessRoute, displayNameFromLogin, parseStoredUser } from "../src/authTypes.ts";
 
-test("demo profiles configure recruiter and student credentials correctly", () => {
+test("demo profiles show recruiter preview and clearly mark student demo login", () => {
   assert.equal(DEMO_PROFILES.recruiter.user.role, "recruiter");
   assert.equal(DEMO_PROFILES.recruiter.user.email, "recruiter@techcorp.com");
-  assert.equal(DEMO_PROFILES.recruiter.passwordHint, "recruiter2026");
+  assert.equal(DEMO_PROFILES.recruiter.passwordHint, undefined);
+  assert.equal(DEMO_PROFILES.recruiter.user.readOnly, undefined);
+  assert.match(DEMO_PROFILES.recruiter.badge, /read-only/i);
 
   assert.equal(DEMO_PROFILES.student.user.role, "student");
   assert.equal(DEMO_PROFILES.student.user.email, "student@university.edu");
   assert.equal(DEMO_PROFILES.student.passwordHint, "student2026");
+});
+
+test("a server-authenticated read-only role survives storage parsing", () => {
+  const recruiter = { ...DEMO_PROFILES.recruiter.user, id: "demo-recruiter", readOnly: true };
+  assert.deepEqual(parseStoredUser(JSON.stringify(recruiter)), recruiter);
+  assert.equal(parseStoredUser(JSON.stringify({ ...recruiter, readOnly: "yes" })), null);
 });
 
 test("students can access create and student views, but not recruiter or placement", () => {

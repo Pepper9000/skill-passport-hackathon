@@ -4,6 +4,7 @@ const names = new Map<string, string>();
 
 /** Load display names ("FastAPI", "PostgreSQL") once at startup; ids are the fallback. */
 export async function loadSkillNames(): Promise<void> {
+  if (!API_BASE) return;
   try {
     const response = await fetch(`${API_BASE}/skills`);
     if (!response.ok) return;

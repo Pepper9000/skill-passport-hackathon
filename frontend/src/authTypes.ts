@@ -7,11 +7,12 @@ export interface User {
   role: UserRole;
   title: string;
   organization: string;
+  readOnly?: boolean;
 }
 
 export interface DemoProfile {
   user: User;
-  passwordHint: string;
+  passwordHint?: string;
   badge: string;
   description: string;
 }
@@ -26,9 +27,8 @@ export const DEMO_PROFILES: Record<UserRole, DemoProfile> = {
       title: "Senior Technical Talent Lead",
       organization: "TechCorp Labs",
     },
-    passwordHint: "recruiter2026",
-    badge: "Full Access • All Sections",
-    description: "Upload resumes, review verified GitHub evidence packets, and screen cohorts in Placement Cell.",
+    badge: "Read-only recruiter preview",
+    description: "Review student passports, verified evidence and placement summaries. Changes are disabled.",
   },
   student: {
     user: {
@@ -71,7 +71,8 @@ export function parseStoredUser(value: string | null): User | null {
       typeof saved.email === "string" && !!saved.email.trim() &&
       (saved.role === "student" || saved.role === "recruiter") &&
       typeof saved.title === "string" && !!saved.title.trim() &&
-      typeof saved.organization === "string" && !!saved.organization.trim()
+      typeof saved.organization === "string" && !!saved.organization.trim() &&
+      (saved.readOnly === undefined || typeof saved.readOnly === "boolean")
       ? saved as User
       : null;
   } catch {

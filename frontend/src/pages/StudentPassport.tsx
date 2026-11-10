@@ -163,7 +163,7 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
         <div className="hero-copy">
           <div className="hero-eyebrow">Student passport · Created {new Date(passport.created_at).toLocaleDateString()}{passport.updated_at && passport.updated_at.slice(0, 10) !== passport.created_at.slice(0, 10) ? ` · Updated ${new Date(passport.updated_at).toLocaleDateString()}` : ""}</div>
           <h1>@{passport.github_username}{passport.is_demo && <span className="demo-badge">DEMO DATA</span>}</h1>
-          <p className="hero-sub"><span className="lead">Target role: {passport.target_role}.</span> GitHub: {passport.sources.repos} repos · Resume PDF · {passport.sources.certificates} certificates{passport.sources.reports ? ` · ${passport.sources.reports} project report${passport.sources.reports === 1 ? "" : "s"}` : ""}.</p>
+          <p className="hero-sub"><span className="lead">Target role: {passport.target_role}.</span> GitHub: {passport.sources.repos} repos{passport.sources.gists ? ` · ${passport.sources.gists} public Gist${passport.sources.gists === 1 ? "" : "s"}` : ""} · Resume PDF · {passport.sources.certificates} certificates{passport.sources.reports ? ` · ${passport.sources.reports} project report${passport.sources.reports === 1 ? "" : "s"}` : ""}.</p>
           <CoverageSummary coverage={passport.coverage} />
           <div className="hero-actions">
             <Link className="button button-light" to={`/placement?preferredRole=${encodeURIComponent(passport.target_role)}`}>View cohort for this role</Link>

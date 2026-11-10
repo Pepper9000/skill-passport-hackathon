@@ -9,11 +9,12 @@ const OUTCOME_LABELS: Record<InterviewOutcome, string> = {
   could_not_explain: "Couldn't explain",
 };
 
-function QuestionCard({ question, index, session, onSaved }: {
+function QuestionCard({ question, index, session, onSaved, readOnly }: {
   question: InterviewQuestion;
   index: number;
   session: InterviewSession;
   onSaved: (question: InterviewQuestion) => void;
+  readOnly: boolean;
 }) {
   const [showGuidance, setShowGuidance] = useState(false);
   const [note, setNote] = useState(question.assessment?.note ?? "");
@@ -93,18 +94,20 @@ function QuestionCard({ question, index, session, onSaved }: {
             <ul>{question.answer_points.map((point) => <li key={point}>{point}</li>)}</ul>
           </div>
         )}
-        <div className="iq-assess" role="group" aria-label={`Outcome for question ${index + 1}`}>
-          {OUTCOME_ORDER.map((outcome) => (
-            <button type="button" key={outcome} disabled={saving}
-              className={`iq-outcome iq-${outcome} ${question.assessment?.outcome === outcome ? "iq-selected" : ""}`}
-              aria-pressed={question.assessment?.outcome === outcome}
-              onClick={() => save(outcome)}>{OUTCOME_LABELS[outcome]}</button>
-          ))}
-        </div>
-        <div className="iq-note">
-          <input value={note} maxLength={500} placeholder="Optional note (what they said, what was unclear)" onChange={(event) => setNote(event.target.value)} aria-label={`Note for question ${index + 1}`} />
-          {noteChanged && question.assessment && <button type="button" className="button button-light" disabled={saving} onClick={() => save(question.assessment!.outcome)}>Save note</button>}
-        </div>
+        {!readOnly && <>
+          <div className="iq-assess" role="group" aria-label={`Outcome for question ${index + 1}`}>
+            {OUTCOME_ORDER.map((outcome) => (
+              <button type="button" key={outcome} disabled={saving}
+                className={`iq-outcome iq-${outcome} ${question.assessment?.outcome === outcome ? "iq-selected" : ""}`}
+                aria-pressed={question.assessment?.outcome === outcome}
+                onClick={() => save(outcome)}>{OUTCOME_LABELS[outcome]}</button>
+            ))}
+          </div>
+          <div className="iq-note">
+            <input value={note} maxLength={500} placeholder="Optional note (what they said, what was unclear)" onChange={(event) => setNote(event.target.value)} aria-label={`Note for question ${index + 1}`} />
+            {noteChanged && question.assessment && <button type="button" className="button button-light" disabled={saving} onClick={() => save(question.assessment!.outcome)}>Save note</button>}
+          </div>
+        </>}
         {question.assessment
           ? <small className="muted">Saved {new Date(question.assessment.assessed_at).toLocaleString()} by {question.assessment.assessor_id}</small>
           : <small className="muted">Not yet assessed.</small>}
@@ -115,10 +118,11 @@ function QuestionCard({ question, index, session, onSaved }: {
 }
 
 /** Private recruiter interview sets: generated on request, saved, and assessed question by question. */
-export default function InterviewWorkspace({ passportId, onOutcomeSaved }: {
+export default function InterviewWorkspace({ passportId, onOutcomeSaved, readOnly = false }: {
   passportId: string;
   /** Called after an outcome is saved, so the page can show the levels it moved. */
   onOutcomeSaved?: () => void;
+  readOnly?: boolean;
 }) {
   const [sessions, setSessions] = useState<InterviewSession[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -222,9 +226,9 @@ export default function InterviewWorkspace({ passportId, onOutcomeSaved }: {
         </div>
         <div className="interview-actions">
           {session?.status === "ready" && <span className="interview-summary-pill">{session.summary.text}</span>}
-          <button type="button" className="button" onClick={generate} disabled={generating || loading || sessions === null}>
+          {!readOnly && <button type="button" className="button" onClick={generate} disabled={generating || loading || sessions === null}>
             {generating ? <><RefreshCw size={14} className="spin" /> Generating…</> : <><MessagesSquare size={14} /> {readySets ? "Generate another set" : "Generate interview set"}</>}
-          </button>
+          </button>}
         </div>
       </div>
       <details className="interview-how">
@@ -242,7 +246,7 @@ export default function InterviewWorkspace({ passportId, onOutcomeSaved }: {
       )}
       {sessions === null && <p className="muted">Loading interview sets…</p>}
       {sessions && !sessions.length && !generating && !loading && !error && (
-        <div className="empty-state">No interview set yet. Generate one to get questions grounded in this candidate's cited code. Refreshing the page never generates new questions.</div>
+        <div className="empty-state">{readOnly ? "No private interview set is available for this candidate." : "No interview set yet. Generate one to get questions grounded in this candidate's cited code. Refreshing the page never generates new questions."}</div>
       )}
       {session?.status === "failed" && <div className="notice notice-error">{session.error ?? "Generation failed."} Generate a new set to try again.</div>}
       {session?.status === "generating" && <p className="muted">This set is still being generated…</p>}
@@ -253,7 +257,7 @@ export default function InterviewWorkspace({ passportId, onOutcomeSaved }: {
           )}
           <div className="iq-list">
             {session.questions.map((question, index) => (
-              <QuestionCard key={question.id} question={question} index={index} session={session} onSaved={updateQuestion} />
+              <QuestionCard key={question.id} question={question} index={index} session={session} onSaved={updateQuestion} readOnly={readOnly} />
             ))}
           </div>
           {session.dropped.length > 0 && (

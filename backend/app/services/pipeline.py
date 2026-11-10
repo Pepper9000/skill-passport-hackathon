@@ -22,6 +22,7 @@ from app.services.github_ingest import (
     GitHubUserNotFoundError,
     ingest_github,
 )
+from app.services.gist_ingest import GistIngestError, GistNotFoundError, ingest_public_gist
 from app.services.growth_and_kit import generate_growth_and_kit
 from app.services.identity import identity_signals
 from app.services.report_parse import (
@@ -51,6 +52,10 @@ def _public_job_error(job_id: str, exc: Exception) -> str:
     """Return useful, non-sensitive guidance while retaining the exception in server logs."""
     job = get_job(job_id) or {}
     step = job.get("step") or "Passport generation"
+    if isinstance(exc, GistNotFoundError):
+        return "The submitted Gist was not found or is not public. Check its URL and visibility."
+    if isinstance(exc, GistIngestError):
+        return str(exc)
     if isinstance(exc, GitHubUserNotFoundError):
         return "We couldn’t find that GitHub account. Check the username spelling and try again."
     if isinstance(exc, GitHubRateLimitError):
@@ -157,6 +162,7 @@ def build_passport(
     report_files: list[tuple[str, bytes]] | None = None,
     portfolio_url: str | None = None,
     codeforces_handle: str | None = None,
+    gist_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     existing = get_passport(passport_id) if passport_id else None
     update_job_id = job_id or (passport_id if passport_id and not existing else None)
@@ -192,6 +198,11 @@ def build_passport(
     ingestion = ingest_github(
         github_username, force_refresh=force_refresh, target_skills=target_skill_ids
     )
+    submitted_gists = gist_urls if gist_urls is not None else (existing or {}).get("gist_urls", [])
+    gist_repos = [ingest_public_gist(github_username, url) for url in submitted_gists]
+    if gist_repos:
+        ingestion["repos"].extend(gist_repos)
+    ingestion["gist_count"] = len(gist_repos)
     if certificate_bytes:
         progress("Reading certificates")
         certificate_groups = [
@@ -301,11 +312,13 @@ def build_passport(
         "created_at": (existing or {}).get("created_at") or now,
         "updated_at": now,
         "github_username": ingestion["username"],
+        "gist_urls": submitted_gists,
         "target_role": role_match["role_name"],
         "codeforces_handle": handle,
         "competitive_programming": competitive,
         "sources": {
             "repos": ingestion["repo_count"],
+            "gists": ingestion.get("gist_count", 0),
             "resume": bool(resume_bytes) or bool(existing and existing["sources"]["resume"]),
             "certificates": (
                 len(certificate_bytes)
@@ -489,6 +502,7 @@ def recheck_passport(existing: dict[str, Any], job_id: str | None = None) -> dic
         force_refresh=True,
         resume_skill_mentions=resume_mentions,
         certificate_skill_mentions=certificate_mentions,
+        gist_urls=existing.get("gist_urls", []),
     )
 
 
@@ -502,6 +516,7 @@ def run_passport_job(
     report_files: list[tuple[str, bytes]] | None = None,
     portfolio_url: str | None = None,
     codeforces_handle: str | None = None,
+    gist_urls: list[str] | None = None,
 ) -> None:
     update_job_id = job_id
     with keep_job_lease(job_id):
@@ -516,6 +531,7 @@ def run_passport_job(
                 report_files=report_files,
                 portfolio_url=portfolio_url,
                 codeforces_handle=codeforces_handle,
+                gist_urls=gist_urls,
             )
         except Exception as exc:
             logger.exception("Passport job %s failed", job_id)

@@ -169,7 +169,9 @@ def test_login_issues_a_session_token_and_logout_ends_it(client) -> None:
     assert ALICE not in login.text and token != ALICE
     headers = {"Authorization": f"Bearer {token}"}
     assert client.get("/auth/me", headers=headers).json() == {
-        "role": "recruiter", "recruiter_id": "alice", "auth_required": True}
+        "role": "recruiter", "recruiter_id": "alice", "auth_required": True,
+        "read_only": False,
+    }
     assert client.get("/passport/p-int/review", headers=headers).status_code == 200
     assert client.post("/auth/logout", headers=headers).status_code == 200
     assert client.get("/auth/me", headers=headers).json()["role"] is None

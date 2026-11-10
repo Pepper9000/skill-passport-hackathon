@@ -337,6 +337,10 @@ def _repo_by_name(repos: list[dict[str, Any]], name: str) -> dict[str, Any] | No
 
 
 def _make_url(repo: dict[str, Any], commit_sha: str, path: str, start: int, end: int) -> str:
+    if repo.get("is_gist"):
+        filename = PurePosixPath(path).name.lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", filename).strip("-")
+        return f"{repo['html_url'].rstrip('/')}/{commit_sha}#file-{slug}-L{start}-L{end}"
     escaped_path = quote(path, safe="/")
     full_name = repo.get("full_name", repo["name"])
     return f"https://github.com/{full_name}/blob/{commit_sha}/{escaped_path}#L{start}-L{end}"
@@ -830,7 +834,7 @@ def _authored_commit_count(repo: dict[str, Any]) -> tuple[int, str]:
 
 def _commit_evidence(repo: dict[str, Any], username: str) -> dict[str, Any] | None:
     """Commits the user authored in a non-fork repo show they use Git."""
-    if repo.get("is_fork"):
+    if repo.get("is_fork") or repo.get("is_gist"):
         return None
     count, more = _authored_commit_count(repo)
     if not count:

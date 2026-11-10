@@ -112,6 +112,48 @@ def test_create_job_persist_and_get_passport(tmp_path, monkeypatch) -> None:
     assert client.get("/passports").json()["items"][0]["id"] == job_id
 
 
+def test_create_passport_forwards_own_public_gist_url(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "gist-upload.sqlite")
+    received = []
+    monkeypatch.setattr(
+        main_module, "run_passport_job",
+        lambda *args, **kwargs: received.append(kwargs.get("gist_urls")),
+    )
+    client = TestClient(main_module.app)
+    response = client.post(
+        "/passport/create",
+        data={
+            "github_username": "student",
+            "target_role": "backend-intern",
+            "is_demo": "true",
+            "gist_url": "https://gist.github.com/Student/ABC1234",
+        },
+        files={"resume": ("resume.pdf", b"%PDF-1.4 demo", "application/pdf")},
+    )
+    assert response.status_code == 202
+    assert received == [["https://gist.github.com/student/abc1234"]]
+
+
+def test_create_passport_rejects_gist_for_another_account(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "gist-owner.sqlite")
+    started = []
+    monkeypatch.setattr(main_module, "run_passport_job", lambda *args, **kwargs: started.append(args))
+    client = TestClient(main_module.app)
+    response = client.post(
+        "/passport/create",
+        data={
+            "github_username": "student",
+            "target_role": "backend-intern",
+            "is_demo": "true",
+            "gist_url": "https://gist.github.com/someone-else/abc1234",
+        },
+        files={"resume": ("resume.pdf", b"%PDF-1.4 demo", "application/pdf")},
+    )
+    assert response.status_code == 422
+    assert "submitted GitHub account" in response.json()["detail"]
+    assert started == []
+
+
 def test_create_rejects_non_pdf_resume() -> None:
     client = TestClient(main_module.app)
     response = client.post(
@@ -565,9 +607,105 @@ def test_application_startup_requires_named_recruiter_keys_when_auth_is_required
     monkeypatch.setattr(main_module, "RECRUITER_KEY", "")
     monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
     monkeypatch.setattr(main_module.config, "RECRUITER_ACCOUNTS_SETTING_VALID", True)
-    with pytest.raises(RuntimeError, match="RECRUITER_ACCOUNTS must be"):
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", "")
+    with pytest.raises(RuntimeError, match="RECRUITER_ACCOUNTS or DEMO_RECRUITER_PASSWORD"):
         with TestClient(main_module.app):
             pass
+
+
+def test_production_demo_recruiter_can_read_but_not_write(tmp_path, monkeypatch) -> None:
+    secret = "recruiter2026"
+    monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "demo-recruiter.sqlite")
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_KEY", "")
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", secret)
+    passport = passport_with_fraud_signals("demo-readonly")
+    storage.save_passport(passport)
+
+    client = TestClient(main_module.app)
+    login = client.post(
+        "/auth/recruiter/login",
+        json={"username": "recruiter@techcorp.com", "key": secret},
+    )
+    assert login.status_code == 200
+    assert login.json()["read_only"] is True
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+
+    assert client.get("/auth/me", headers=headers).json()["read_only"] is True
+    assert client.get("/passport/demo-readonly/review", headers=headers).status_code == 200
+    assert client.get("/passports/review", headers=headers).status_code == 200
+    assert client.post("/passport/demo-readonly/recheck", headers=headers).status_code == 403
+    owner_token = "student-owner-token"
+    with storage._connect() as connection:
+        connection.execute(
+            "INSERT INTO passport_owners (passport_id, access_token_hash) VALUES (?, ?)",
+            ("demo-readonly", hashlib.sha256(owner_token.encode()).hexdigest()),
+        )
+    assert client.post(
+        "/passport/demo-readonly/recheck",
+        headers={**headers, "X-Passport-Token": owner_token},
+    ).status_code == 403
+    assert client.post("/passport/demo-readonly/interview-sessions", headers=headers).status_code == 403
+    assert client.put(
+        "/interview-sessions/missing/questions/missing/assessment",
+        headers=headers,
+        json={"outcome": "explained_well"},
+    ).status_code == 403
+    assert client.post("/review-requests/missing/mark-reviewed", headers=headers).status_code == 403
+    assert client.post(
+        "/passport/demo-readonly/review-requests",
+        headers=headers,
+        json={"citation_key": "python:demo:app.py:1-2"},
+    ).status_code == 404
+    assert client.post(
+        "/auth/recruiter/login",
+        json={"username": "recruiter@techcorp.com", "key": "wrong"},
+    ).status_code == 401
+
+
+def test_normal_named_recruiter_authentication_is_unchanged(monkeypatch) -> None:
+    secret = "named-recruiter-secret-that-is-long-enough"
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {"reviewer": secret})
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", "different-demo-secret")
+    client = TestClient(main_module.app)
+
+    login = client.post("/auth/recruiter/login", json={"key": secret})
+
+    assert login.status_code == 200
+    assert login.json()["recruiter_id"] == "reviewer"
+    assert login.json()["read_only"] is False
+    assert client.get(
+        "/auth/me", headers={"Authorization": f"Bearer {login.json()['token']}"}
+    ).json()["read_only"] is False
+
+
+def test_production_startup_accepts_demo_account_without_named_recruiters(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "RECRUITER_ACCOUNTS_SETTING_VALID", True)
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", "configured-demo-secret")
+    monkeypatch.setattr(main_module.config, "APP_ENV", "development")
+    monkeypatch.setattr(main_module.config, "OWNERSHIP_PROOF_SETTING_VALID", True)
+    monkeypatch.setattr(main_module.config, "REQUIRE_OWNERSHIP_PROOF", True)
+    monkeypatch.setattr(main_module, "reconcile_interrupted_jobs", lambda: None)
+    monkeypatch.setattr(main_module, "prune_old_jobs", lambda: None)
+    monkeypatch.setattr(main_module, "prune_old_rate_limits", lambda: None)
+    monkeypatch.setattr(main_module, "prune_json_cache", lambda _path: None)
+
+    main_module.startup()
+
+
+def test_production_startup_rejects_demo_password_matching_named_recruiter(monkeypatch) -> None:
+    secret = "s" * 32
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {"reviewer": secret})
+    monkeypatch.setattr(main_module.config, "RECRUITER_ACCOUNTS_SETTING_VALID", True)
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", secret)
+
+    with pytest.raises(RuntimeError, match="must differ from every named recruiter password"):
+        main_module.startup()
 
 
 def test_commit_signature_integration_in_recruiter_view(tmp_path, monkeypatch) -> None:

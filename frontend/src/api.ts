@@ -1,7 +1,8 @@
 import { shouldRememberGenerationJob } from "./jobPolling.ts";
+import { resolveApiBase } from "./apiConfig.ts";
 
 // `?.` so the module also loads under Node's test runner, where Vite's import.meta.env is absent.
-export const API_BASE = import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:8000";
+export const API_BASE = resolveApiBase(import.meta.env?.VITE_API_BASE_URL, import.meta.env?.DEV === true);
 
 export type Evidence = {
   type: "code" | "dependency" | "config" | "commit";
@@ -185,7 +186,7 @@ export type Passport = {
   created_at: string;
   github_username: string;
   target_role: string;
-  sources: { repos: number; resume: boolean; certificates: number; reports?: number };
+  sources: { repos: number; gists?: number; resume: boolean; certificates: number; reports?: number };
   coverage?: Coverage;
   skills: PassportSkill[];
   rejected_claims: RejectedClaim[];
@@ -502,7 +503,7 @@ export type InterviewSession = {
   outcome_labels: Record<InterviewOutcome, string>;
 };
 
-export type RecruiterIdentity = { role: "recruiter"; recruiter_id: string; auth_required: boolean };
+export type RecruiterIdentity = { role: "recruiter"; recruiter_id: string; auth_required: boolean; read_only: boolean };
 type MeResponse = RecruiterIdentity | { role: null; recruiter_id: null; auth_required: true };
 
 export type RoleRequirement = { skill_id: string; name?: string; min_level: string; importance: string };
@@ -534,6 +535,12 @@ export function isAuthError(reason: unknown): boolean {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  if (!API_BASE) {
+    throw new ApiError(
+      "The backend URL is not configured. Set VITE_API_BASE_URL to the deployed API URL and rebuild the frontend.",
+      0,
+    );
+  }
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, options);
@@ -747,9 +754,9 @@ export const api = {
     return job;
   },
   badge: (id: string) => request<Record<string, unknown>>(`/passport/${id}/badge`),
-  recruiterLogin: async (key: string) => {
-    const session = await request<{ token: string; recruiter_id: string; expires_at: string }>(
-      "/auth/recruiter/login", { method: "POST", ...json({ key }) },
+  recruiterLogin: async (key: string, username: string) => {
+    const session = await request<{ token: string; recruiter_id: string; read_only: boolean; expires_at: string }>(
+      "/auth/recruiter/login", { method: "POST", ...json({ key, username }) },
     );
     setRecruiterToken(session.token);
     return session;

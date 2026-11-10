@@ -38,15 +38,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
  * /auth/recruiter/login for a session token, which every recruiter endpoint checks.
  * Returns an error message, or null on success.
  */
-async function recruiterSignIn(password: string): Promise<string | null> {
+async function recruiterSignIn(
+  password: string,
+  username: string,
+): Promise<{ recruiter_id: string; read_only: boolean } | { error: string }> {
   try {
-    await api.recruiterLogin(password);
-    return null;
+    return await api.recruiterLogin(password, username);
   } catch (reason) {
     // A development server with no recruiter key configured leaves recruiter routes open.
     const open = await api.me().catch(() => null);
-    if (open && !open.auth_required) return null;
-    return reason instanceof Error ? reason.message : "Recruiter sign-in failed.";
+    if (open && !open.auth_required) return { recruiter_id: open.recruiter_id, read_only: open.read_only };
+    return { error: reason instanceof Error ? reason.message : "Recruiter sign-in failed." };
   }
 }
 
@@ -76,7 +78,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Re-check a restored recruiter profile with the server: the token may have expired or been
     // revoked, or there may be no token at all (a keyless development server confirms via /auth/me).
     if (initialSession.user?.role === "recruiter") {
-      api.me().then((identity) => { if (!identity) endRecruiterSession(); }).catch(() => undefined);
+      api.me().then((identity) => {
+        if (!identity) {
+          endRecruiterSession();
+        } else {
+          setUser((current) => current?.role === "recruiter"
+            ? { ...current, id: identity.recruiter_id, readOnly: identity.read_only }
+            : current);
+        }
+      }).catch(() => undefined);
     }
     return () => setAuthRequiredHandler(null);
   }, [initialSession]);
@@ -123,9 +133,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       trimmedEmail === DEMO_PROFILES.recruiter.user.email.toLowerCase() ||
       trimmedEmail.includes("recruiter")
     ) {
-      const error = await recruiterSignIn(trimmedPass);
-      if (error) return { success: false, error };
-      const authenticatedUser = { ...DEMO_PROFILES.recruiter.user };
+      const result = await recruiterSignIn(trimmedPass, trimmedEmail);
+      if ("error" in result) return { success: false, error: result.error };
+      const authenticatedUser = {
+        ...DEMO_PROFILES.recruiter.user,
+        id: result.recruiter_id,
+        readOnly: result.read_only,
+      };
       if (!trimmedEmail.includes("@techcorp.com") && trimmedEmail.includes("@")) {
         authenticatedUser.email = trimmedEmail;
       }
@@ -159,20 +173,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   };
 
-  /** One click: the recruiter profile signs in with the demo password; it only takes effect if the server accepts it. */
+  /** Opening recruiter access asks for server-validated credentials; it never grants a local role. */
   const switchRole = async (newRole: UserRole) => {
     const profile = DEMO_PROFILES[newRole];
     if (newRole !== "recruiter") {
       setStudent(profile.user);
       return;
     }
-    const error = await recruiterSignIn(profile.passwordHint);
-    if (error) {
-      setAuthError(error);
-      setIsLoginModalOpen(true);
-      return;
-    }
-    setRecruiter(profile.user);
+    void api.recruiterLogout();
+    setUser(null);
+    setAuthError("Sign in with the configured recruiter account to continue.");
+    setIsLoginModalOpen(true);
   };
 
   const quickLogin = switchRole;

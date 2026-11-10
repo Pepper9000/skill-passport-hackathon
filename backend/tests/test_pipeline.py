@@ -183,6 +183,7 @@ def test_recheck_preserves_legacy_resume_and_certificate_claims(monkeypatch) -> 
             {"skill_id": "aws", "name": "AWS", "level": "Claimed", "certified": True},
         ],
         "sources": {"resume": True, "certificates": 1},
+        "gist_urls": ["https://gist.github.com/student/abc1234"],
         "role_match": {"role_id": "backend-intern"},
     }
     captured = {}
@@ -192,6 +193,7 @@ def test_recheck_preserves_legacy_resume_and_certificate_claims(monkeypatch) -> 
 
     assert captured["resume_skill_mentions"] == [{"skill_id": "python", "mention": "Python"}]
     assert captured["certificate_skill_mentions"] == [{"skill_id": "aws", "mention": "AWS"}]
+    assert captured["gist_urls"] == ["https://gist.github.com/student/abc1234"]
 
 
 def _stub_pipeline(monkeypatch, existing, new_skills, growth=None):

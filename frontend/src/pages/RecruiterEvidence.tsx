@@ -10,11 +10,13 @@ import LadderPill from "../components/LadderPill";
 import RejectedClaims from "../components/RejectedClaims";
 import SqlDepthPanel from "../components/SqlDepthPanel";
 import { earlierSourcesText, notWrittenText, verifiability } from "../verifiability";
+import { useAuth } from "../auth";
 
 const levelOrder: Record<PassportSkill["level"], number> = { Claimed: 0, Used: 1, Applied: 2, Demonstrated: 3 };
 
 /** Full evidence review for recruiters: every authorship signal and every excluded claim. */
 export default function RecruiterEvidence() {
+  const { user } = useAuth();
   const { id = "" } = useParams();
   const [searchParams] = useSearchParams();
   const [passport, setPassport] = useState<Passport | null>(null);
@@ -56,6 +58,7 @@ export default function RecruiterEvidence() {
             {verify.notWritten > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {notWrittenText(verify.notWritten)}</span>}
           </p>
           <CoverageSummary coverage={passport.coverage} />
+          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Review requests cannot be updated.</p>}
           <div className="hero-actions">
             <Link className="button button-light" to={`/recruiter/${passport.id}`}><ArrowLeft size={15} /> Recruiter summary</Link>
           </div>
@@ -96,6 +99,7 @@ export default function RecruiterEvidence() {
           <SqlDepthPanel result={passport.sql_depth} audience="recruiter" />
           <RejectedClaims claims={passport.rejected_claims} audience="recruiter" passportId={passport.id}
             requests={passport.review_requests} labels={passport.check_labels}
+            readOnly={user?.readOnly}
             onChanged={() => {
               if (passport.id !== activeId.current) return;
               const version = ++loadVersion.current;

@@ -59,6 +59,7 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
   const [reports, setReports] = useState<File[]>([]);
   const [portfolioUrl, setPortfolioUrl] = useState("");
   const [cfHandle, setCfHandle] = useState("");
+  const [gistUrl, setGistUrl] = useState("");
   const [jdTitle, setJdTitle] = useState("");
   const [jdText, setJdText] = useState("");
   const [extracted, setExtracted] = useState<CustomRole | null>(null);
@@ -203,6 +204,7 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
     sentReports.forEach((file) => data.append("reports", file));
     if (sentPortfolio) data.append("portfolio_url", sentPortfolio);
     if (trimmedCfHandle) data.append("codeforces_handle", trimmedCfHandle);
+    if (gistUrl.trim()) data.append("gist_url", gistUrl.trim());
     try {
       const created = await api.createPassport(data);
       if (!demo) setChallenge(null); // each code works once
@@ -292,7 +294,10 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
             <small>PDF · Max 10 MB</small>
             <input type="file" accept="application/pdf,.pdf" onChange={(event) => { setResume(event.target.files?.[0] ?? null); setError(""); }} />
           </label>
-          <details className="optional-uploads"><summary>Optional: Codeforces, certificates, reports and portfolio</summary>
+          <details className="optional-uploads"><summary>Optional: public Gist, Codeforces, certificates, reports and portfolio</summary>
+          <label className="cert-upload">Public GitHub Gist <span className="muted">optional · must belong to {username.trim() || "your submitted GitHub account"} · public source files only</span>
+            <input type="url" value={gistUrl} maxLength={300} placeholder={`https://gist.github.com/${username || "username"}/...`} onChange={(event) => { setGistUrl(event.target.value); setError(""); }} />
+          </label>
           <label className="cert-upload">Certificates <span className="muted">optional · up to 5 PDFs or images · select multiple</span>
             <span className="file-field">
               <input type="file" className="file-input-hidden" accept="application/pdf,.pdf,image/png,.png,image/jpeg,.jpg,.jpeg" multiple disabled={certificates.length >= 5} onChange={(event) => {

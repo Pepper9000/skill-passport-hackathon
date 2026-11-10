@@ -44,6 +44,7 @@ from app.config import (
 from app.routes.debug import router as debug_router
 from app.services.badge import create_badge
 from app.services.framework import get_roles, get_skills
+from app.services.gist_ingest import MAX_GIST_URL_LENGTH, parse_gist_url
 from app.services.github_ingest import validate_github_username
 from app.services.identity import OwnershipError, create_challenge, verify_challenge
 from app.services.interview_levels import apply_interview_levels
@@ -235,11 +236,21 @@ class PassportCreateRateLimitMiddleware:
 
 
 def startup() -> None:
-    if REQUIRE_RECRUITER_AUTH and (
-        not config.RECRUITER_ACCOUNTS_SETTING_VALID or not RECRUITER_ACCOUNTS
-    ):
+    if REQUIRE_RECRUITER_AUTH and not config.RECRUITER_ACCOUNTS_SETTING_VALID:
         raise RuntimeError(
             "RECRUITER_ACCOUNTS must be a JSON object of named keys (each secret at least 32 characters)."
+        )
+    if (
+        REQUIRE_RECRUITER_AUTH
+        and config.DEMO_RECRUITER_PASSWORD
+        and config.DEMO_RECRUITER_PASSWORD.strip() in RECRUITER_ACCOUNTS.values()
+    ):
+        raise RuntimeError(
+            "DEMO_RECRUITER_PASSWORD must differ from every named recruiter password."
+        )
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
+        raise RuntimeError(
+            "Configure RECRUITER_ACCOUNTS or DEMO_RECRUITER_PASSWORD before starting in production."
         )
     if not config.OWNERSHIP_PROOF_SETTING_VALID:
         raise RuntimeError("REQUIRE_OWNERSHIP_PROOF must be true or false.")
@@ -465,6 +476,8 @@ def _recruiter_id_for_session(authorization: str | None) -> str | None:
     recruiter_id = get_recruiter_session(hashlib.sha256(token.encode()).hexdigest())
     if recruiter_id in RECRUITER_ACCOUNTS:
         return recruiter_id
+    if recruiter_id == config.DEMO_RECRUITER_ID and config.DEMO_RECRUITER_PASSWORD:
+        return recruiter_id
     if recruiter_id == "local-recruiter" and not REQUIRE_RECRUITER_AUTH and RECRUITER_KEY:
         return recruiter_id
     return None
@@ -489,7 +502,7 @@ def require_recruiter(
     - If no credential matches, fails closed with 401.
     Local development may use RECRUITER_KEY or leave recruiter routes open.
     """
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
         raise HTTPException(
             status_code=500,
             detail="Recruiter authentication is not configured.",
@@ -499,6 +512,12 @@ def require_recruiter(
     recruiter_id = _recruiter_id_from_credentials(x_recruiter_key, authorization)
     if not recruiter_id:
         raise HTTPException(status_code=401, detail="Recruiter sign-in is required.")
+    return recruiter_id
+
+
+def require_recruiter_write(recruiter_id: str = Depends(require_recruiter)) -> str:
+    if recruiter_id == config.DEMO_RECRUITER_ID:
+        raise HTTPException(status_code=403, detail="The demo recruiter account is read-only.")
     return recruiter_id
 
 
@@ -519,9 +538,12 @@ def _require_passport_access(
     recruiter_key: str | None = None,
     authorization: str | None = None,
 ) -> None:
+    recruiter_id = _recruiter_id_from_credentials(recruiter_key, authorization)
+    if recruiter_id == config.DEMO_RECRUITER_ID:
+        raise HTTPException(status_code=403, detail="The demo recruiter account cannot re-check passports.")
     if _valid_token_hash(get_passport_owner_token_hash(passport_id), token):
         return
-    if _recruiter_id_from_credentials(recruiter_key, authorization):
+    if recruiter_id:
         return
     raise HTTPException(status_code=404, detail="Passport not found.")
 
@@ -673,6 +695,7 @@ async def create_passport(
     reports: list[UploadFile] | None = File(default=None),
     portfolio_url: str | None = Form(default=None),
     codeforces_handle: str | None = Form(default=None),
+    gist_url: str | None = Form(default=None, max_length=MAX_GIST_URL_LENGTH),
 ) -> dict[str, str]:
     try:
         github_username = validate_github_username(github_username)
@@ -711,6 +734,13 @@ async def create_passport(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     else:
         codeforces_handle = None
+    gist_urls = []
+    if gist_url and gist_url.strip():
+        try:
+            _, canonical_gist_url = parse_gist_url(gist_url, github_username)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        gist_urls.append(canonical_gist_url)
 
     # Atomic job slot reservation before accepting large file bodies
     candidate_key = github_username.strip().lower()
@@ -804,6 +834,7 @@ async def create_passport(
         report_files=report_files,
         portfolio_url=portfolio_url,
         codeforces_handle=codeforces_handle,
+        gist_urls=gist_urls,
     )
     return {"job_id": job_id, "access_token": access_token}
 
@@ -956,7 +987,7 @@ def create_passport_review_request(
 
 
 @app.post("/review-requests/{request_id}/mark-reviewed")
-def mark_reviewed(request_id: str, reviewer_id: str = Depends(require_recruiter)) -> dict:
+def mark_reviewed(request_id: str, reviewer_id: str = Depends(require_recruiter_write)) -> dict:
     result = mark_review_request_reviewed(request_id, reviewer_id)
     if not result:
         raise HTTPException(status_code=404, detail="Review request not found.")
@@ -1013,6 +1044,7 @@ def badge(passport_id: str) -> dict:
 
 class RecruiterLoginBody(BaseModel):
     key: str = Field(min_length=1, max_length=512)
+    username: str | None = Field(default=None, max_length=100)
 
 
 def _recruiter_auth_open() -> bool:
@@ -1024,16 +1056,32 @@ def _recruiter_auth_open() -> bool:
 def recruiter_login(body: RecruiterLoginBody, request: Request) -> dict:
     """Exchange a recruiter key for a short-lived sign-in token (only its hash is stored)."""
     check_rate_limit(request, "recruiter_login", max_requests=10, window_seconds=600)
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
         raise HTTPException(status_code=500, detail="Recruiter authentication is not configured.")
-    recruiter_id = _recruiter_id_for_key(body.key.strip())
+    demo_login = (
+        body.username
+        and body.username.strip().lower() == config.DEMO_RECRUITER_USERNAME
+        and bool(config.DEMO_RECRUITER_PASSWORD)
+        and hmac.compare_digest(
+            body.key.strip().encode(), config.DEMO_RECRUITER_PASSWORD.encode()
+        )
+    )
+    recruiter_id = (
+        config.DEMO_RECRUITER_ID if demo_login else _recruiter_id_for_key(body.key.strip())
+    )
     if not recruiter_id:
         raise HTTPException(status_code=401, detail="That recruiter password is not valid.")
     token = secrets.token_urlsafe(32)
     expires_at = create_recruiter_session(
         recruiter_id, hashlib.sha256(token.encode()).hexdigest(), RECRUITER_SESSION_SECONDS
     )
-    return {"token": token, "role": "recruiter", "recruiter_id": recruiter_id, "expires_at": expires_at}
+    return {
+        "token": token,
+        "role": "recruiter",
+        "recruiter_id": recruiter_id,
+        "read_only": recruiter_id == config.DEMO_RECRUITER_ID,
+        "expires_at": expires_at,
+    }
 
 
 @app.get("/auth/me")
@@ -1048,7 +1096,12 @@ def auth_me(
         if exc.status_code != 401:
             raise
         return {"role": None, "recruiter_id": None, "auth_required": True}
-    return {"role": "recruiter", "recruiter_id": recruiter_id, "auth_required": not _recruiter_auth_open()}
+    return {
+        "role": "recruiter",
+        "recruiter_id": recruiter_id,
+        "auth_required": not _recruiter_auth_open(),
+        "read_only": recruiter_id == config.DEMO_RECRUITER_ID,
+    }
 
 
 @app.post("/auth/logout")
@@ -1087,7 +1140,7 @@ def create_interview_session(
     passport_id: str,
     request: Request,
     response: Response,
-    recruiter_id: str = Depends(require_recruiter),
+    recruiter_id: str = Depends(require_recruiter_write),
     idempotency_key: str | None = Header(default=None, max_length=100),
 ) -> dict:
     """Generate and save a fresh private interview set without rebuilding the passport.
@@ -1161,7 +1214,7 @@ def assess_interview_question(
     session_id: str,
     question_id: str,
     body: AssessmentBody,
-    recruiter_id: str = Depends(require_recruiter),
+    recruiter_id: str = Depends(require_recruiter_write),
 ) -> dict:
     """Record a recruiter's observation. Recruiter views adjust the skill's level from it on read
     (interview_levels.py); the stored passport, verification and depth scores are unchanged."""
