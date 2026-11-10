@@ -27,6 +27,7 @@ export const DEMO_PROFILES: Record<UserRole, DemoProfile> = {
       title: "Senior Technical Talent Lead",
       organization: "TechCorp Labs",
     },
+    passwordHint: "recruiter2026",
     badge: "Read-only recruiter preview",
     description: "Review student passports, verified evidence and placement summaries. Changes are disabled.",
   },

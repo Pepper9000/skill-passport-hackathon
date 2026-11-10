@@ -664,6 +664,37 @@ def test_production_demo_recruiter_can_read_but_not_write(tmp_path, monkeypatch)
     ).status_code == 401
 
 
+def test_frontend_origins_normalize_exact_vercel_origins_and_reject_wildcards() -> None:
+    assert main_module.config.parse_frontend_origins(
+        " https://Passport.Example.vercel.app/, https://preview.example.vercel.app "
+    ) == [
+        "https://passport.example.vercel.app",
+        "https://preview.example.vercel.app",
+    ]
+    with pytest.raises(ValueError, match="exact HTTP\\(S\\) origins"):
+        main_module.config.parse_frontend_origins("https://*.vercel.app")
+
+    client = TestClient(main_module.app)
+    allowed = client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type,x-passport-token",
+        },
+    )
+    blocked = client.options(
+        "/health",
+        headers={
+            "Origin": "https://unlisted.example.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "access-control-allow-origin" not in blocked.headers
+
+
 def test_demo_recruiter_login_accepts_legacy_key_only_request(monkeypatch) -> None:
     secret = "demo-login-regression-secret"
     monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)

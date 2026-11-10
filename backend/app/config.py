@@ -2,6 +2,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -29,11 +30,52 @@ GEMINI_JD_MODEL = os.getenv("GEMINI_JD_MODEL") or "gemini-3.5-flash-lite"
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = (os.getenv("DEEPSEEK_MODEL") or "deepseek-flash").strip() or "deepseek-flash"
 DEEPSEEK_BASE_URL = (os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com").strip() or "https://api.deepseek.com"
-FRONTEND_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
-    if origin.strip()
-]
+
+
+def _normalize_frontend_origin(value: str) -> str:
+    parsed = urlsplit(value.strip())
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("FRONTEND_ORIGINS must contain valid exact HTTP(S) origins.") from exc
+    if (
+        parsed.scheme.lower() not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or "*" in value
+    ):
+        raise ValueError(
+            "FRONTEND_ORIGINS must contain exact HTTP(S) origins without paths, "
+            "credentials, queries, fragments, or wildcards."
+        )
+
+    scheme = parsed.scheme.lower()
+    hostname = parsed.hostname.lower()
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
+    if port is not None and not (scheme == "http" and port == 80) and not (scheme == "https" and port == 443):
+        hostname = f"{hostname}:{port}"
+    return f"{scheme}://{hostname}"
+
+
+def parse_frontend_origins(value: str) -> list[str]:
+    """Parse a comma-separated exact-origin allowlist, normalizing harmless slash/case differences."""
+    origins = []
+    for item in value.split(","):
+        if item.strip():
+            origin = _normalize_frontend_origin(item)
+            if origin not in origins:
+                origins.append(origin)
+    return origins
+
+
+FRONTEND_ORIGINS = parse_frontend_origins(
+    os.getenv("FRONTEND_ORIGINS", "http://localhost:5173")
+)
 
 
 def _normalize_ip(address: str) -> str | None:

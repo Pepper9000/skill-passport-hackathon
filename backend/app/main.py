@@ -287,8 +287,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Idempotency-Key",
+        "X-Passport-Token",
+        "X-Recruiter-Key",
+    ],
 )
 if ALLOW_DEBUG_ENDPOINTS:
     app.include_router(debug_router)

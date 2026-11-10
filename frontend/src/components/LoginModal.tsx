@@ -141,7 +141,9 @@ export default function LoginModal() {
           <div className="auth-autofill-hint" role="status">
             <CheckCircle2 size={15} />
             <span>
-              <strong>{lastAutoFilledRole === "recruiter" ? "Recruiter email" : "Student"}</strong> filled. {lastAutoFilledRole === "recruiter" ? "Enter the demo password to continue." : <>Press <strong>Sign in</strong> to continue.</>}
+              {lastAutoFilledRole === "recruiter"
+                ? <><strong>Demo recruiter credentials</strong> filled. Click <strong>Sign in</strong> to continue.</>
+                : <><strong>Student</strong> filled. Press <strong>Sign in</strong> to continue.</>}
             </span>
           </div>
         )}

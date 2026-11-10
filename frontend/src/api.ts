@@ -548,7 +548,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     if (reason instanceof Error && reason.name === "AbortError") {
       throw new ApiError("The request was interrupted. Please try again.", 0);
     }
-    throw new ApiError("Can’t reach the Skill Passport server. Make sure the backend is running, then try again.", 0);
+    throw new ApiError(
+      "Could not contact the Skill Passport API. Check its URL, server availability, and backend CORS allowlist.",
+      0,
+    );
   }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
