@@ -1059,8 +1059,10 @@ def recruiter_login(body: RecruiterLoginBody, request: Request) -> dict:
     if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
         raise HTTPException(status_code=500, detail="Recruiter authentication is not configured.")
     demo_login = (
-        body.username
-        and body.username.strip().lower() == config.DEMO_RECRUITER_USERNAME
+        (
+            body.username is None
+            or body.username.strip().lower() == config.DEMO_RECRUITER_USERNAME
+        )
         and bool(config.DEMO_RECRUITER_PASSWORD)
         and hmac.compare_digest(
             body.key.strip().encode(), config.DEMO_RECRUITER_PASSWORD.encode()

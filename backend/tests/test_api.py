@@ -664,6 +664,20 @@ def test_production_demo_recruiter_can_read_but_not_write(tmp_path, monkeypatch)
     ).status_code == 401
 
 
+def test_demo_recruiter_login_accepts_legacy_key_only_request(monkeypatch) -> None:
+    secret = "demo-login-regression-secret"
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", secret)
+    client = TestClient(main_module.app)
+
+    login = client.post("/auth/recruiter/login", json={"key": secret})
+
+    assert login.status_code == 200
+    assert login.json()["recruiter_id"] == main_module.config.DEMO_RECRUITER_ID
+    assert login.json()["read_only"] is True
+
+
 def test_normal_named_recruiter_authentication_is_unchanged(monkeypatch) -> None:
     secret = "named-recruiter-secret-that-is-long-enough"
     monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
