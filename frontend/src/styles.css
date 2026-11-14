@@ -972,18 +972,65 @@ a.row:hover .row-name { text-decoration: underline; text-underline-offset: 3px; 
 .cp-panel .cp-marks span { display: inline-flex; align-items: center; gap: 5px; }
 .cp-panel .unavailable-note { display: flex; align-items: center; gap: 5px; }
 
-/* Recruiter evidence review controls + audit trail */
-.review-controls { margin-top: 0.6rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }
-.review-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.4rem; }
-.review-actions input { flex: 1 1 12rem; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; color: inherit; padding: 0.4rem 0.6rem; }
-.review-badge { display: inline-block; font-size: 0.8rem; border-radius: 999px; padding: 0.15rem 0.6rem; }
-.review-verified { background: var(--success-soft); color: var(--success); }
-.review-flagged { background: var(--warning-soft); color: var(--warning); }
-.review-rejected { background: rgba(240, 140, 130, .12); color: var(--danger); }
-.audit-panel { margin-top: 1rem; }
-.audit-list { list-style: none; margin: 0; padding: 0; }
-.audit-row { display: flex; gap: 0.8rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
-.audit-row time { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+/* Recruiter evidence review controls + audit trail.
+   Site language: Geist sans body at panel density (11-12px), Geist Mono micro
+   labels (9-10px, letterspaced), pill controls, quiet dividers, status shown
+   as a dot + word in the semantic token color (no pill badges). */
+.status-mark { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.status-verified { color: var(--success); }
+.status-flagged { color: var(--warning); }
+.status-rejected { color: var(--danger); }
+.status-request { color: var(--info); }
+.status-closed { color: var(--muted); }
+
+.review-controls { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.review-current { display: flex; align-items: baseline; gap: 9px; margin: 0 0 10px; }
+.review-meta { color: var(--subtle); font-family: var(--font-mono); font-size: 9px; letter-spacing: .6px; }
+.review-form-row { display: grid; gap: 10px; }
+.review-note { display: grid; gap: 5px; }
+.review-note > span { color: var(--subtle); font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+.review-note input { height: 38px; border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 11px; background: var(--ground); color: var(--ink-soft); font-size: 12px; transition: border-color .16s ease, box-shadow .16s ease; }
+.review-note input::placeholder { color: var(--subtle); }
+.review-note input:focus { border-color: var(--ink); outline: none; box-shadow: 0 0 0 3px rgba(250, 250, 250, .12); }
+.review-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.review-decide { padding: 8px 14px; font-size: 12px; font-weight: 600; }
+.review-decide:active:not(:disabled) { transform: scale(.97); transition: transform .1s ease-out; }
+.review-flag:hover:not(:disabled) { border-color: rgba(231, 196, 107, .55); color: var(--warning); }
+.review-reject:hover:not(:disabled) { border-color: rgba(240, 140, 130, .55); color: var(--danger); }
+.review-latest { display: flex; gap: 8px; align-items: baseline; margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; text-wrap: pretty; }
+.review-latest span { flex: none; color: var(--subtle); font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; }
+
+.audit-panel { margin-top: 16px; }
+.audit-tools { display: flex; align-items: center; gap: 10px; }
+.audit-filter { display: inline-flex; align-items: center; gap: 8px; }
+.audit-filter > span { color: var(--subtle); font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+.audit-filter .filter-select { max-width: 150px; }
+.audit-explainer { margin: 8px 0 12px; font-size: 11px; }
+.audit-list { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.audit-list::-webkit-scrollbar { width: 8px; }
+.audit-list::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+.audit-list::-webkit-scrollbar-track { background: transparent; }
+.audit-row { display: flex; gap: 12px; align-items: baseline; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+.audit-row:last-child { border-bottom: 0; }
+.audit-row .status-mark { flex: none; width: 74px; }
+.audit-body { min-width: 0; }
+.audit-body p { margin: 0; color: var(--ink-soft); font-size: 11.5px; line-height: 1.5; text-wrap: pretty; overflow-wrap: anywhere; }
+.audit-body strong { color: var(--ink); font-weight: 600; }
+.audit-note { margin-top: 3px !important; color: var(--muted) !important; }
+.audit-row time { flex: none; margin-left: auto; color: var(--subtle); font-family: var(--font-mono); font-size: 9px; letter-spacing: .4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.audit-empty { display: grid; justify-items: center; gap: 6px; text-align: center; padding: 22px 17px; }
+.audit-empty svg { color: var(--subtle); }
+.audit-empty p { margin: 0; color: var(--ink-soft); font-size: 12px; font-weight: 500; }
+.audit-empty small { color: var(--subtle); font-size: 11px; line-height: 1.5; max-width: 40ch; }
+
+@media (max-width: 700px) {
+  .audit-row { flex-wrap: wrap; gap: 6px 10px; }
+  .audit-row time { margin-left: 0; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-decide, .review-note input { transition: none; }
+}
 
 /* Readiness roadmap */
 .roadmap-phase { margin-bottom: 1.2rem; }

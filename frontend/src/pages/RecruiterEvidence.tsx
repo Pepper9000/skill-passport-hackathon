@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, type AuditEvent, type EvidenceReview, type EvidenceReviewStatus, type Passport, type PassportSkill } from "../api";
+import AuditTrail from "../components/AuditTrail";
 import SkillName from "../components/SkillName";
 import CoverageSummary from "../components/CoverageSummary";
 import EvidencePanel from "../components/EvidencePanel";
@@ -132,20 +133,7 @@ export default function RecruiterEvidence() {
                   })
               } />
           ) : <section className="panel empty-evidence">Select a skill to inspect its evidence trail.</section>}
-          <section className="panel audit-panel">
-            <div className="panel-heading"><div><h2>Audit trail</h2></div><span className="count-tag">{trail.length} events</span></div>
-            <p className="muted">Every review decision and review request on this passport, oldest first. Decisions are never edited; a changed mind is a new event.</p>
-            {trail.length ? (
-              <ol className="audit-list">
-                {trail.map((event, index) => (
-                  <li className="audit-row" key={`${event.at}-${index}`}>
-                    <time>{new Date(event.at).toLocaleString()}</time>
-                    <span><strong>{event.actor}</strong> {event.summary}{event.note ? ` — ${event.note}` : ""}</span>
-                  </li>
-                ))}
-              </ol>
-            ) : <div className="empty-state">No review activity yet.</div>}
-          </section>
+          <AuditTrail trail={trail} />
         </aside>
       </div>
     </div>

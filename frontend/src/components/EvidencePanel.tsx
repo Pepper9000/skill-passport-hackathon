@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, CircleHelp, ExternalLink, FileCode2, FlaskConical, X } from "lucide-react";
 import { useState } from "react";
 import { DEFAULT_CHECK_LABELS, skillLabel, type Evidence, type EvidenceReview, type EvidenceReviewStatus, type PassportSkill } from "../api";
+import { auditStatus, auditTime } from "../auditStatus";
 import { evidenceCitation, showsNotCountedNote } from "../evidencePanel";
 import type { Audience } from "./RejectedClaims";
 import SkillLevel from "./SkillLevel";
@@ -41,23 +42,32 @@ function ReviewControls({ citation, current, onReview }: {
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setBusy(false));
   };
+  const meta = current ? auditStatus(current.status) : null;
   return (
     <div className="review-controls">
-      {current && (
-        <span className={`review-badge review-${current.status}`}>
-          {current.status} by {current.reviewer_id} · {new Date(current.created_at).toLocaleString()}
-        </span>
+      {current && meta && (
+        <p className="review-current">
+          <span className={`status-mark ${meta.className}`}>
+            <span className="status-dot" aria-hidden="true" />{meta.label}
+          </span>
+          <span className="review-meta">{current.reviewer_id} · {auditTime(current.created_at)}</span>
+        </p>
       )}
-      <div className="review-actions">
-        <input
-          type="text" value={note} maxLength={1000} placeholder="Note (optional)"
-          onChange={(event) => setNote(event.target.value)} aria-label="Review note"
-        />
-        <button className="button button-light" disabled={busy} onClick={() => decide("verified")}>Verify</button>
-        <button className="button button-light" disabled={busy} onClick={() => decide("flagged")}>Flag</button>
-        <button className="button button-light" disabled={busy} onClick={() => decide("rejected")}>Reject</button>
+      <div className="review-form-row">
+        <label className="review-note">
+          <span>Note</span>
+          <input
+            type="text" value={note} maxLength={1000} placeholder="Reason for this decision…"
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
+        <div className="review-actions">
+          <button className="button review-decide" disabled={busy} onClick={() => decide("verified")}>Verify</button>
+          <button className="button button-light review-decide review-flag" disabled={busy} onClick={() => decide("flagged")}>Flag</button>
+          <button className="button button-light review-decide review-reject" disabled={busy} onClick={() => decide("rejected")}>Reject</button>
+        </div>
       </div>
-      {current?.note && <p className="muted">Latest note: {current.note}</p>}
+      {current?.note && <p className="review-latest"><span>Note</span>{current.note}</p>}
       {error && <p className="notice notice-error">{error}</p>}
     </div>
   );
