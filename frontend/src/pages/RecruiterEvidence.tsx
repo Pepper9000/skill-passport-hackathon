@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, type AuditEvent, type EvidenceReview, type EvidenceReviewStatus, type Passport, type PassportSkill } from "../api";
@@ -82,6 +82,19 @@ export default function RecruiterEvidence() {
                 : <div className="snapshot-row"><span>No account checks recorded</span><b>—</b></div>}
             </div>
           </section>
+          {passport.certificate_links && passport.certificate_links.length > 0 && (
+            <section className="panel">
+              <h3>Certificates</h3>
+              <div className="panel-list">
+                {passport.certificate_links.map((link) => (
+                  <div className="snapshot-row" key={link.url}><span>{link.issuer}</span>
+                    <a className="icon-link" href={link.url} target="_blank" rel="noreferrer">Verify at issuer <ExternalLink size={12} /></a>
+                  </div>
+                ))}
+              </div>
+              <p className="muted">Public verification links found in the uploaded certificates.</p>
+            </section>
+          )}
         </div>
       </header>
       <div className="facts">

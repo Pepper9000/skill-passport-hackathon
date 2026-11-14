@@ -288,6 +288,8 @@ export type Passport = {
   review_requests?: ReviewRequest[];
   /** Recruiter asks for more evidence, with the candidate's answers. */
   evidence_requests?: EvidenceRequest[];
+  /** Public verification links found in the uploaded certificates. */
+  certificate_links?: { url: string; issuer: string }[];
   /** Review endpoints only: one reviewer-ready packet per role requirement. */
   requirement_packets?: RequirementPacket[];
   /** Review endpoints only: account ownership and resume link checks. */

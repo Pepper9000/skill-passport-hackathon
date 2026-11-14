@@ -129,3 +129,7 @@ REVOKE POST-JOB: the classic public_repo token AND the read-only fine-grained PA
 - Known limitation (existing design): the answer form only works in the browser session that created the passport (sessionStorage token) - same constraint as re-check.
 - Tests: 4 new API tests; backend 673 passed, frontend 47 passed, tsc clean.
 - Screenshots: recruiter desktop + mobile, student desktop + mobile.
+
+### M3: issuer-link document signals (backend verified, UI panel committed)
+- Fix: certificate text is scanned for public issuer verification URLs (Coursera, Credly, Udemy, freeCodeCamp, Google Cloud); links are deduped and stored as certificate_links on the passport (survive re-check); recruiter evidence page shows a "Certificates" panel with "Verify at issuer" links.
+- Verified: extractor unit tests (2 new); suite 675 passed; live run on passport c95dc741-eca9-4e4a-b337-6a8229d88eba extracted https://coursera.org/verify/XKCD42DEMO from an uploaded certificate PDF. UI panel committed; desktop/mobile screenshots of the panel NOT yet captured (run limit).
