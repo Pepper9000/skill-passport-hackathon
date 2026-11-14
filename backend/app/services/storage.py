@@ -127,6 +127,26 @@ def initialize_storage() -> None:
             connection.execute("ALTER TABLE review_requests ADD COLUMN reviewer_id TEXT")
         except sqlite3.OperationalError:
             pass
+        # Recruiter evidence reviews: an append-only audit trail. Every verification decision
+        # (verified / flagged / rejected) is a new row, so the full history of who decided
+        # what and when is preserved. The current state of a citation is its latest row.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evidence_reviews (
+                id TEXT PRIMARY KEY,
+                passport_id TEXT NOT NULL,
+                skill_id TEXT NOT NULL,
+                citation TEXT NOT NULL,
+                status TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                reviewer_id TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evidence_reviews_passport ON evidence_reviews (passport_id, citation, created_at)"
+        )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS rate_limits (
@@ -526,6 +546,110 @@ def mark_review_request_reviewed(request_id: str, reviewer_id: str) -> dict[str,
         )
         row = connection.execute("SELECT * FROM review_requests WHERE id = ?", (request_id,)).fetchone()
     return dict(row) if row else None
+
+
+EVIDENCE_REVIEW_STATUSES = ("verified", "flagged", "rejected")
+
+
+def add_evidence_review(
+    passport_id: str,
+    skill_id: str,
+    citation: str,
+    status: str,
+    note: str,
+    reviewer_id: str,
+) -> dict[str, Any]:
+    """Append one recruiter decision to the audit trail. Never updates in place: the history
+    of every decision (and change of mind) is the point of the feature."""
+    if status not in EVIDENCE_REVIEW_STATUSES:
+        raise ValueError(f"status must be one of {EVIDENCE_REVIEW_STATUSES}")
+    initialize_storage()
+    row = {
+        "id": str(uuid.uuid4()),
+        "passport_id": passport_id,
+        "skill_id": skill_id,
+        "citation": citation,
+        "status": status,
+        "note": note,
+        "reviewer_id": reviewer_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO evidence_reviews (id, passport_id, skill_id, citation, status, note, reviewer_id, created_at)
+            VALUES (:id, :passport_id, :skill_id, :citation, :status, :note, :reviewer_id, :created_at)
+            """,
+            row,
+        )
+    return row
+
+
+def list_evidence_review_states(passport_id: str) -> dict[str, dict[str, Any]]:
+    """Current review state per citation: the latest decision wins."""
+    initialize_storage()
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM evidence_reviews WHERE passport_id = ? ORDER BY created_at, id",
+            (passport_id,),
+        ).fetchall()
+    states: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        states[row["citation"]] = dict(row)
+    return states
+
+
+def evidence_audit_trail(passport_id: str) -> list[dict[str, Any]]:
+    """Every auditable event on this passport, oldest first: evidence decisions and the
+    lifecycle of the student's review requests."""
+    initialize_storage()
+    events: list[dict[str, Any]] = []
+    with _connect() as connection:
+        reviews = connection.execute(
+            "SELECT * FROM evidence_reviews WHERE passport_id = ? ORDER BY created_at, id",
+            (passport_id,),
+        ).fetchall()
+        requests = connection.execute(
+            "SELECT * FROM review_requests WHERE passport_id = ? ORDER BY created_at, id",
+            (passport_id,),
+        ).fetchall()
+    for row in reviews:
+        item = dict(row)
+        events.append({
+            "at": item["created_at"],
+            "kind": "evidence_review",
+            "actor": item["reviewer_id"],
+            "summary": f"marked {item['skill_id']} evidence as {item['status']}",
+            "skill_id": item["skill_id"],
+            "citation": item["citation"],
+            "status": item["status"],
+            "note": item["note"],
+        })
+    for row in requests:
+        item = dict(row)
+        events.append({
+            "at": item["created_at"],
+            "kind": "review_requested",
+            "actor": "student",
+            "summary": f"requested a review of an excluded citation ({item['citation_key'][:80]})",
+            "skill_id": None,
+            "citation": item["citation_key"],
+            "status": "open",
+            "note": item.get("note") or "",
+        })
+        if item.get("reviewed_at"):
+            events.append({
+                "at": item["reviewed_at"],
+                "kind": "review_marked_reviewed",
+                "actor": item.get("reviewer_id") or "recruiter",
+                "summary": f"closed the review request for {item['citation_key'][:80]}",
+                "skill_id": None,
+                "citation": item["citation_key"],
+                "status": "reviewed",
+                "note": "",
+            })
+    events.sort(key=lambda event: event["at"])
+    return events
 
 
 def get_review_requests_by_passports(passport_ids: list[str] | None = None) -> dict[str, list[dict[str, Any]]]:

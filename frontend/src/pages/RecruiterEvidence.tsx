@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { api, type Passport, type PassportSkill } from "../api";
+import { api, type AuditEvent, type EvidenceReview, type EvidenceReviewStatus, type Passport, type PassportSkill } from "../api";
 import SkillName from "../components/SkillName";
 import CoverageSummary from "../components/CoverageSummary";
 import EvidencePanel from "../components/EvidencePanel";
@@ -22,6 +22,8 @@ export default function RecruiterEvidence() {
   const [passport, setPassport] = useState<Passport | null>(null);
   const [selected, setSelected] = useState<PassportSkill | null>(null);
   const [error, setError] = useState("");
+  const [reviews, setReviews] = useState<Record<string, EvidenceReview>>({});
+  const [trail, setTrail] = useState<AuditEvent[]>([]);
   const loadVersion = useRef(0);
   const activeId = useRef(id);
   useLayoutEffect(() => { activeId.current = id; }, [id]);
@@ -39,6 +41,12 @@ export default function RecruiterEvidence() {
         setSelected(requested ?? sortedSkills(data)[0] ?? null);
       })
       .catch((reason: Error) => { if (version === loadVersion.current) setError(reason.message); });
+    api.evidenceReviews(id)
+      .then((data) => { if (version === loadVersion.current) setReviews(data.reviews); })
+      .catch(() => { /* reviews are additive; the page still works without them */ });
+    api.auditTrail(id)
+      .then((data) => { if (version === loadVersion.current) setTrail(data.events); })
+      .catch(() => { /* same */ });
     return () => { loadVersion.current += 1; };
   }, [id, searchParams]);
 
@@ -112,7 +120,32 @@ export default function RecruiterEvidence() {
             }} />
         </div>
         <aside className="evidence-column">
-          {selected ? <EvidencePanel skill={selected} audience="recruiter" labels={passport.check_labels} /> :<section className="panel empty-evidence">Select a skill to inspect its evidence trail.</section>}
+          {selected ? (
+            <EvidencePanel skill={selected} audience="recruiter" labels={passport.check_labels}
+              reviews={reviews}
+              onReview={user?.readOnly ? undefined : (citation, status: EvidenceReviewStatus, note: string) =>
+                api.reviewEvidence(passport.id, { skill_id: selected.skill_id, citation, status, note })
+                  .then(() => Promise.all([api.evidenceReviews(passport.id), api.auditTrail(passport.id)]))
+                  .then(([nextReviews, nextTrail]) => {
+                    setReviews(nextReviews.reviews);
+                    setTrail(nextTrail.events);
+                  })
+              } />
+          ) : <section className="panel empty-evidence">Select a skill to inspect its evidence trail.</section>}
+          <section className="panel audit-panel">
+            <div className="panel-heading"><div><h2>Audit trail</h2></div><span className="count-tag">{trail.length} events</span></div>
+            <p className="muted">Every review decision and review request on this passport, oldest first. Decisions are never edited; a changed mind is a new event.</p>
+            {trail.length ? (
+              <ol className="audit-list">
+                {trail.map((event, index) => (
+                  <li className="audit-row" key={`${event.at}-${index}`}>
+                    <time>{new Date(event.at).toLocaleString()}</time>
+                    <span><strong>{event.actor}</strong> {event.summary}{event.note ? ` — ${event.note}` : ""}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : <div className="empty-state">No review activity yet.</div>}
+          </section>
         </aside>
       </div>
     </div>

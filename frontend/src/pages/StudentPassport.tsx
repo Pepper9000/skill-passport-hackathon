@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, isMissingJobError, type Passport, type PassportSkill } from "../api";
 import CompetitiveProgrammingPanel from "../components/CompetitiveProgrammingPanel";
 import CoverageSummary from "../components/CoverageSummary";
+import Roadmap from "../components/Roadmap";
 import EvidencePanel from "../components/EvidencePanel";
 import GrowthCard from "../components/GrowthCard";
 import LadderPill from "../components/LadderPill";
@@ -174,7 +175,9 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
           <section className="panel">
             <h3>Next up</h3>
             <div className="panel-list">
-              {passport.growth_tasks.length ? passport.growth_tasks.map((task) => (
+              {passport.roadmap && !passport.roadmap.empty ? passport.roadmap.phases[0].steps.slice(0, 3).map((step) => (
+                <div className="snapshot-row" key={step.skill_id}><span>{step.order}. <SkillName item={{ skill_id: step.skill_id }} /></span><b>{step.importance === "must" ? "MUST" : "nice"}</b></div>
+              )) : passport.growth_tasks.length ? passport.growth_tasks.map((task) => (
                 <div className="snapshot-row" key={task.skill_id}><span><SkillName item={{ skill_id: task.skill_id }} /></span><b>1 task</b></div>
               )) : <div className="snapshot-row"><span>{growthUnavailable(passport) ? "Growth plan unavailable" : "No role gaps found"}</span><b>—</b></div>}
             </div>
@@ -225,9 +228,9 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
           <SqlDepthPanel result={passport.sql_depth} audience={audience} compact />
           <CompetitiveProgrammingPanel result={passport.competitive_programming} />
           <section className="panel growth-panel">
-            <div className="panel-heading"><div><h2>Next steps</h2></div></div>
-            <p className="muted">Finish a task, then re-check to update your levels.</p>
-            {passport.growth_tasks.length ? passport.growth_tasks.map((task) => (
+            <div className="panel-heading"><div><h2>Readiness roadmap</h2></div>{passport.roadmap && !passport.roadmap.empty && <span className="count-tag">{passport.roadmap.total_steps} steps</span>}</div>
+            <p className="muted">Work through the steps in order, then re-check to update your levels.</p>
+            {passport.roadmap ? <Roadmap roadmap={passport.roadmap} /> : passport.growth_tasks.length ? passport.growth_tasks.map((task) => (
               <GrowthCard key={task.skill_id} task={task} onRecheck={recheck} busy={busy} />
             )) : growthUnavailable(passport)
               ? <div className="notice notice-warning">{GROWTH_UNAVAILABLE}</div>

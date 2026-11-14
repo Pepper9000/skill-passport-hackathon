@@ -971,3 +971,29 @@ a.row:hover .row-name { text-decoration: underline; text-underline-offset: 3px; 
 .cp-panel .cp-marks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0 0; font-size: 11px; color: var(--muted); }
 .cp-panel .cp-marks span { display: inline-flex; align-items: center; gap: 5px; }
 .cp-panel .unavailable-note { display: flex; align-items: center; gap: 5px; }
+
+/* Recruiter evidence review controls + audit trail */
+.review-controls { margin-top: 0.6rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }
+.review-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.4rem; }
+.review-actions input { flex: 1 1 12rem; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; color: inherit; padding: 0.4rem 0.6rem; }
+.review-badge { display: inline-block; font-size: 0.8rem; border-radius: 999px; padding: 0.15rem 0.6rem; }
+.review-verified { background: var(--success-soft); color: var(--success); }
+.review-flagged { background: var(--warning-soft); color: var(--warning); }
+.review-rejected { background: rgba(240, 140, 130, .12); color: var(--danger); }
+.audit-panel { margin-top: 1rem; }
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-row { display: flex; gap: 0.8rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+.audit-row time { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+
+/* Readiness roadmap */
+.roadmap-phase { margin-bottom: 1.2rem; }
+.roadmap-step { border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem; margin: 0.6rem 0; }
+.roadmap-step-head { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.roadmap-order { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 999px; background: var(--accent-soft); color: var(--ink); font-weight: 700; font-size: 0.85rem; }
+.effort-tag { font-size: 0.75rem; border-radius: 999px; padding: 0.1rem 0.55rem; background: var(--surface-soft); }
+.effort-M { background: var(--warning-soft); color: var(--warning); }
+.effort-S { background: var(--success-soft); color: var(--success); }
+.effort-L { background: rgba(240, 140, 130, .12); color: var(--danger); }
+.must-tag { font-size: 0.72rem; font-weight: 700; color: var(--danger); letter-spacing: 0.04em; }
+.roadmap-actions { margin: 0.5rem 0 0; padding-left: 1.4rem; }
+.roadmap-actions li { margin: 0.25rem 0; }

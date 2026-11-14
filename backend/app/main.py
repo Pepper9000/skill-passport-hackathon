@@ -70,15 +70,19 @@ from app.services.json_cache import prune_json_cache
 from app.services.packets import requirement_packets
 from app.services.codeforces_ingest import validate_codeforces_handle
 from app.services.pipeline import ensure_depth_analyzers, run_passport_job, run_recheck_job
+from app.services.roadmap import build_roadmap
 from app.services.report_parse import MAX_REPORTS, safe_filename, validate_portfolio_url
 from app.services.sql_depth import student_sql_depth
 from app.services.skill_depth import student_skill_depth
 from app.services.storage import (
+    EVIDENCE_REVIEW_STATUSES,
+    add_evidence_review,
     check_storage_rate_limit,
     check_storage_ready,
     complete_interview_session,
     create_recruiter_session,
     create_review_request,
+    evidence_audit_trail,
     delete_recruiter_session,
     fail_interview_session,
     get_custom_role,
@@ -87,6 +91,7 @@ from app.services.storage import (
     get_passport_owner_token_hash,
     get_recruiter_session,
     get_review_requests_by_passports,
+    list_evidence_review_states,
     list_interview_outcomes,
     list_interview_sessions,
     list_passports_page,
@@ -402,6 +407,7 @@ def student_view(passport: dict[str, Any], requests: list[dict[str, Any]] | None
                 view["skill_depth"].pop("sql", None)
         else:
             view.pop("skill_depth")
+    view["roadmap"] = build_roadmap(view)
     return view
 
 
@@ -998,6 +1004,52 @@ def mark_reviewed(request_id: str, reviewer_id: str = Depends(require_recruiter_
     if not result:
         raise HTTPException(status_code=404, detail="Review request not found.")
     return result
+
+
+class EvidenceReviewBody(BaseModel):
+    skill_id: str = Field(min_length=1, max_length=120)
+    citation: str = Field(min_length=1, max_length=600)
+    status: str
+    note: str = Field(default="", max_length=1000)
+
+
+@app.post("/passport/{passport_id}/evidence-reviews", status_code=201)
+def create_evidence_review(
+    passport_id: str,
+    body: EvidenceReviewBody,
+    background_tasks: BackgroundTasks,
+    reviewer_id: str = Depends(require_recruiter_write),
+) -> dict:
+    """A recruiter records a decision about one cited evidence item. Append-only: every
+    decision lands in the audit trail, a changed mind is a new event, never an edit."""
+    if body.status not in EVIDENCE_REVIEW_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status must be one of: {', '.join(EVIDENCE_REVIEW_STATUSES)}.",
+        )
+    _stored_passport(passport_id, background_tasks)
+    return add_evidence_review(
+        passport_id,
+        body.skill_id.strip(),
+        body.citation.strip(),
+        body.status,
+        body.note.strip(),
+        reviewer_id,
+    )
+
+
+@app.get("/passport/{passport_id}/evidence-reviews", dependencies=[Depends(require_recruiter)])
+def get_evidence_reviews(passport_id: str, background_tasks: BackgroundTasks) -> dict:
+    """Current review state per citation (latest decision wins), for the evidence review page."""
+    _stored_passport(passport_id, background_tasks)
+    return {"reviews": list_evidence_review_states(passport_id)}
+
+
+@app.get("/passport/{passport_id}/audit-trail", dependencies=[Depends(require_recruiter)])
+def get_audit_trail(passport_id: str, background_tasks: BackgroundTasks) -> dict:
+    """Every auditable event on the passport, oldest first."""
+    _stored_passport(passport_id, background_tasks)
+    return {"events": evidence_audit_trail(passport_id)}
 
 
 @app.post("/passport/{passport_id}/recheck", status_code=202)
