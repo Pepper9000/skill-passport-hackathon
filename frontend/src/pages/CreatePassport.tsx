@@ -292,7 +292,17 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
             <span className="upload-icon"><FileUp size={20} /></span>
             <strong>{resume ? resume.name : "Upload your resume"}</strong>
             <small>PDF · Max 10 MB</small>
-            <input type="file" accept="application/pdf,.pdf" onChange={(event) => { setResume(event.target.files?.[0] ?? null); setError(""); }} />
+            <input type="file" accept="application/pdf,.pdf" onChange={(event) => {
+              const picked = event.target.files?.[0] ?? null;
+              if (picked && picked.size > 10 * 1024 * 1024) {
+                setResume(null);
+                setError("Resume PDF must be 10 MB or smaller.");
+                event.target.value = "";
+                return;
+              }
+              setResume(picked);
+              setError("");
+            }} />
           </label>
           <details className="optional-uploads"><summary>Optional: public Gist, Codeforces, certificates, reports and portfolio</summary>
           <label className="cert-upload">Public GitHub Gist <span className="muted">optional · must belong to {username.trim() || "your submitted GitHub account"} · public source files only</span>
@@ -301,13 +311,23 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
           <label className="cert-upload">Certificates <span className="muted">optional · up to 5 PDFs or images · select multiple</span>
             <span className="file-field">
               <input type="file" className="file-input-hidden" accept="application/pdf,.pdf,image/png,.png,image/jpeg,.jpg,.jpeg" multiple disabled={certificates.length >= 5} onChange={(event) => {
-                const selected = Array.from(event.currentTarget.files ?? []);
+                const picked = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
+                const isAllowed = (file: File) =>
+                  file.type === "application/pdf" || file.type === "image/png" || file.type === "image/jpeg"
+                  || /\.(pdf|png|jpe?g)$/i.test(file.name);
+                const rejected = picked.filter((file) => !isAllowed(file));
+                const oversized = picked.filter((file) => isAllowed(file) && file.size > 10 * 1024 * 1024);
+                const selected = picked.filter((file) => isAllowed(file) && file.size <= 10 * 1024 * 1024);
                 const remaining = 5 - certificates.length;
                 setCertificates([...certificates, ...selected.slice(0, remaining)]);
-                setError(selected.length > remaining
-                  ? "Upload no more than 5 certificates. Extra selected files were not added."
-                  : "");
+                setError(rejected.length
+                  ? "Certificates must be PDF, PNG, or JPEG files. Unsupported files were not added."
+                  : oversized.length
+                    ? "Each certificate must be 10 MB or smaller. Larger files were not added."
+                    : selected.length > remaining
+                      ? "Upload no more than 5 certificates. Extra selected files were not added."
+                      : "");
               }} />
               <span className="file-trigger" aria-disabled={certificates.length >= 5}><Paperclip size={13} /> Choose files</span>
               <span className="file-chosen">{certificates.length ? `${certificates.length} of 5 selected` : "No files selected"}</span>
@@ -327,13 +347,23 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
               <label className="cert-upload">Project reports <span className="muted">optional · up to 3 PDFs or images · checked against your code, never raise a level</span>
                 <span className="file-field">
                   <input type="file" className="file-input-hidden" accept="application/pdf,.pdf,image/png,.png,image/jpeg,.jpg,.jpeg" multiple disabled={reports.length >= 3} onChange={(event) => {
-                    const selected = Array.from(event.currentTarget.files ?? []);
+                    const picked = Array.from(event.currentTarget.files ?? []);
                     event.currentTarget.value = "";
+                    const isAllowed = (file: File) =>
+                      file.type === "application/pdf" || file.type === "image/png" || file.type === "image/jpeg"
+                      || /\.(pdf|png|jpe?g)$/i.test(file.name);
+                    const rejected = picked.filter((file) => !isAllowed(file));
+                    const oversized = picked.filter((file) => isAllowed(file) && file.size > 10 * 1024 * 1024);
+                    const selected = picked.filter((file) => isAllowed(file) && file.size <= 10 * 1024 * 1024);
                     const remaining = 3 - reports.length;
                     setReports([...reports, ...selected.slice(0, remaining)]);
-                    setError(selected.length > remaining
-                      ? "Upload no more than 3 project reports. Extra selected files were not added."
-                      : "");
+                    setError(rejected.length
+                      ? "Project reports must be PDF, PNG, or JPEG files. Unsupported files were not added."
+                      : oversized.length
+                        ? "Each project report must be 10 MB or smaller. Larger files were not added."
+                        : selected.length > remaining
+                          ? "Upload no more than 3 project reports. Extra selected files were not added."
+                          : "");
                   }} />
                   <span className="file-trigger" aria-disabled={reports.length >= 3}><Paperclip size={13} /> Choose files</span>
                   <span className="file-chosen">{reports.length ? `${reports.length} of 3 selected` : "No files selected"}</span>

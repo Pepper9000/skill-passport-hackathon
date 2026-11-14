@@ -1,6 +1,7 @@
 import base64
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,7 @@ def fake_github(monkeypatch, tmp_path) -> FakeGitHub:
     monkeypatch.setattr(github_ingest, "_file_blame", lambda *args: None)
     monkeypatch.setattr(github_ingest, "GITHUB_TOKEN", "")
     monkeypatch.setattr(github_ingest, "_cache_path", lambda username: tmp_path / f"github-{username}.json")
+    monkeypatch.setattr(github_ingest, "_HTTP_CACHE_DIR", tmp_path / "http")
     return fake
 
 
@@ -398,7 +400,7 @@ def test_test_contents_have_their_own_budget_and_prefer_matching_stems(fake_gith
     assert {"src/engine.py", "src/report.py"} <= set(repo["source_files"])
 
 
-def test_only_real_rate_limits_are_rate_limit_errors() -> None:
+def test_only_real_rate_limits_are_rate_limit_errors(monkeypatch) -> None:
     class Response:
         def __init__(self, status: int, message: str, remaining: str) -> None:
             self.status_code, self.reason_phrase = status, "Forbidden"
@@ -412,6 +414,8 @@ def test_only_real_rate_limits_are_rate_limit_errors() -> None:
     def call(response: Response) -> None:
         github_ingest._get(type("C", (), {"get": lambda self, url, **kw: response})(), "u")
 
+    # No server timing: bounded exponential backoff, then the same error as before.
+    monkeypatch.setattr(github_ingest, "_sleep", lambda _seconds: None)
     with pytest.raises(GitHubRateLimitError):
         call(Response(403, "API rate limit exceeded", "0"))
     with pytest.raises(GitHubRateLimitError):
@@ -510,3 +514,94 @@ def test_cache_written_for_superset_targets_does_not_serve_subset_request(fake_g
 
     github_ingest.ingest_github("student", target_skills=["flask"])
     assert len(fake_github.calls) > calls_after_superset  # subset: must refetch
+
+
+def test_rate_limit_waits_for_retry_after_then_recovers(monkeypatch) -> None:
+    waits: list[int] = []
+    monkeypatch.setattr(github_ingest, "_sleep", waits.append)
+    calls = {"count": 0}
+
+    class Response:
+        def __init__(self, status: int) -> None:
+            self.status_code, self.reason_phrase = status, "Too Many Requests"
+            self.is_error = status >= 400
+            self.headers = {"Retry-After": "7", "X-RateLimit-Remaining": "0"}
+
+        def json(self) -> dict:
+            return {"message": "API rate limit exceeded"}
+
+    class Client:
+        def get(self, _url, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] < 3:
+                return Response(429)
+            ok = Response(200)
+            ok.headers = {}
+            return ok
+
+    response = github_ingest._get(Client(), "https://api.github.com/users/octocat")
+    assert response.status_code == 200
+    assert waits == [7, 7]
+    assert calls["count"] == 3
+
+
+def test_rate_limit_reset_beyond_the_cap_fails_fast(monkeypatch) -> None:
+    monkeypatch.setattr(github_ingest, "_sleep", lambda _seconds: None)
+
+    class Response:
+        status_code, reason_phrase, is_error = 403, "Forbidden", True
+        headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(time.time()) + 7200)}
+
+        def json(self) -> dict:
+            return {"message": "API rate limit exceeded"}
+
+    class Client:
+        def get(self, _url, **_kwargs):
+            return Response()
+
+    with pytest.raises(GitHubRateLimitError):
+        github_ingest._get(Client(), "https://api.github.com/users/octocat")
+
+
+def test_http_cache_etag_revalidation_and_immutable_urls(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(github_ingest, "_HTTP_CACHE_DIR", tmp_path / "http")
+    sent_headers: list[dict] = []
+
+    class Response:
+        def __init__(self, status: int, body, etag=None) -> None:
+            self.status_code, self.reason_phrase = status, "OK"
+            self.is_error = False
+            self.headers = {"etag": etag} if etag else {}
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        calls = 0
+
+        def get(self, url, headers=None, **_kwargs):
+            type(self).calls += 1
+            sent_headers.append(headers or {})
+            if "If-None-Match" in (headers or {}):
+                return Response(304, None)
+            return Response(200, {"items": [1]}, etag='"abc123"')
+
+    url = "https://api.github.com/users/octocat/repos"
+    assert github_ingest._request(Client(), url) == {"items": [1]}
+    assert github_ingest._request(Client(), url) == {"items": [1]}
+    assert sent_headers[1].get("If-None-Match") == '"abc123"'  # 304 served from cache
+    assert Client.calls == 2
+
+    immutable = "https://api.github.com/repos/o/r/commits/" + "a" * 40
+
+    class ImmutableClient:
+        calls = 0
+
+        def get(self, _url, headers=None, **_kwargs):
+            type(self).calls += 1
+            return Response(200, {"sha": "x"})
+
+    assert github_ingest._request(ImmutableClient(), immutable) == {"sha": "x"}
+    assert github_ingest._request(ImmutableClient(), immutable) == {"sha": "x"}
+    assert ImmutableClient.calls == 1  # content-addressed URL: second read is free, no request

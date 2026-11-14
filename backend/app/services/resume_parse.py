@@ -192,6 +192,35 @@ def parse_certificate(pdf_bytes: bytes) -> list[dict[str, str]]:
     return match_resume_skills(extract_certificate_text(pdf_bytes))
 
 
+# Issuers whose certificate pages are public verification links: anyone with the URL can
+# confirm the credential at the source. Bare host/path text is matched too, since PDFs
+# often print the link without the scheme.
+_ISSUER_LINK_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("Coursera", re.compile(r"(?:https?://)?(?:www\.)?coursera\.org/(?:account/accomplishments/)?(?:verify|professional-certificates)/[A-Za-z0-9\-_/]+", re.I)),
+    ("Credly", re.compile(r"(?:https?://)?(?:www\.)?credly\.com/(?:badges|earner/earned/badge|org/[^/\s]+/badge)/[A-Za-z0-9\-_/]+", re.I)),
+    ("Udemy", re.compile(r"(?:https?://)?(?:www\.)?udemy\.com/certificate/[A-Za-z0-9\-_/]+", re.I)),
+    ("freeCodeCamp", re.compile(r"(?:https?://)?(?:www\.)?freecodecamp\.org/certification/[A-Za-z0-9\-_/]+", re.I)),
+    ("Google Cloud", re.compile(r"(?:https?://)?(?:www\.)?(?:cloud\.google\.com|google\.credly\.com)/[A-Za-z0-9\-_/]*(?:certification|badge)[A-Za-z0-9\-_/]*", re.I)),
+]
+
+
+def extract_issuer_links(text: str) -> list[dict[str, str]]:
+    """Public verification links found in a certificate's text, deduped by URL."""
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for issuer, pattern in _ISSUER_LINK_PATTERNS:
+        for match in pattern.finditer(text):
+            url = match.group(0).rstrip(".,);]")
+            if not url.lower().startswith("http"):
+                url = "https://" + url
+            key = url.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append({"url": url, "issuer": issuer})
+    return found
+
+
 def _document_ocr(image_bytes: bytes) -> str:
     width, height = _encoded_image_dimensions(image_bytes)
     if width * height > MAX_CERTIFICATE_OCR_PIXELS or max(width, height) > MAX_CERTIFICATE_OCR_SIDE:

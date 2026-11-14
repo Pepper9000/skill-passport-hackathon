@@ -121,6 +121,62 @@ export type ReviewRequest = {
   reviewer_id?: string | null;
 };
 
+export type EvidenceRequest = {
+  id: string;
+  passport_id: string;
+  skill_id: string;
+  note: string;
+  recruiter_id: string;
+  created_at: string;
+  status: "open" | "responded";
+  response: string;
+  responded_at: string | null;
+};
+
+export type EvidenceReviewStatus = "verified" | "flagged" | "rejected";
+
+export type EvidenceReview = {
+  id: string;
+  passport_id: string;
+  skill_id: string;
+  citation: string;
+  status: EvidenceReviewStatus;
+  note: string;
+  reviewer_id: string;
+  created_at: string;
+};
+
+export type AuditEvent = {
+  at: string;
+  kind: "evidence_review" | "review_requested" | "review_marked_reviewed" | "evidence_requested" | "evidence_responded";
+  actor: string;
+  summary: string;
+  skill_id: string | null;
+  citation: string;
+  status: string;
+  note: string;
+};
+
+export type RoadmapStep = {
+  order: number;
+  skill_id: string;
+  skill_name: string;
+  importance: "must" | "nice";
+  title: string;
+  current: string;
+  target_level: string;
+  effort: "S" | "M" | "L";
+  actions: string[];
+};
+
+export type Roadmap = {
+  role_name: string;
+  phases: { phase: number; title: string; why: string; steps: RoadmapStep[] }[];
+  total_steps: number;
+  effort_legend: Record<string, string>;
+  empty: boolean;
+};
+
 export type PassportPage = { items: Passport[]; total: number; limit: number; offset: number };
 
 /** Same format as the backend: "{skill_id}:{repo}:{file_path}:{start}-{end}". */
@@ -211,6 +267,8 @@ export type Passport = {
     task: string;
     evidence_it_will_create: string;
   }[];
+  /** Student view only: the ordered readiness plan built from role gaps. */
+  roadmap?: Roadmap;
   /** The student practice kit (I7). `good_answer_mentions` is returned on review endpoints only. */
   interview_kit: {
     skill_id: string;
@@ -228,6 +286,10 @@ export type Passport = {
   check_labels?: Record<string, string>;
   /** Review endpoints only. */
   review_requests?: ReviewRequest[];
+  /** Recruiter asks for more evidence, with the candidate's answers. */
+  evidence_requests?: EvidenceRequest[];
+  /** Public verification links found in the uploaded certificates. */
+  certificate_links?: { url: string; issuer: string }[];
   /** Review endpoints only: one reviewer-ready packet per role requirement. */
   requirement_packets?: RequirementPacket[];
   /** Review endpoints only: account ownership and resume link checks. */
@@ -744,6 +806,31 @@ export const api = {
   },
   markReviewed: (requestId: string) =>
     reviewRequest<ReviewRequest>(`/review-requests/${requestId}/mark-reviewed`, { method: "POST" }),
+  evidenceReviews: (passportId: string) =>
+    reviewRequest<{ reviews: Record<string, EvidenceReview> }>(`/passport/${passportId}/evidence-reviews`),
+  reviewEvidence: (passportId: string, body: { skill_id: string; citation: string; status: EvidenceReviewStatus; note: string }) =>
+    reviewRequest<EvidenceReview>(`/passport/${passportId}/evidence-reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  askEvidence: (passportId: string, body: { skill_id: string; note: string }) =>
+    reviewRequest<EvidenceRequest>(`/passport/${passportId}/evidence-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  respondEvidence: (passportId: string, requestId: string, response: string) => {
+    const token = sessionStorage.getItem(`passport-token:${passportId}`);
+    if (!token) throw new Error("Answers must be submitted from the browser session that created this passport.");
+    return request<EvidenceRequest>(`/evidence-requests/${requestId}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Passport-Token": token },
+      body: JSON.stringify({ response }),
+    });
+  },
+  auditTrail: (passportId: string) =>
+    reviewRequest<{ events: AuditEvent[] }>(`/passport/${passportId}/audit-trail`),
   recheck: async (id: string) => {
     const token = sessionStorage.getItem(`passport-token:${id}`);
     if (!token) throw new Error("Re-check is only available in the browser session that created this passport.");

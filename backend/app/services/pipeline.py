@@ -38,7 +38,13 @@ from app.services.jobs import (
     keep_job_lease,
     update_job,
 )
-from app.services.resume_parse import parse_certificate, parse_resume, redact_personal_data
+from app.services.resume_parse import (
+    extract_certificate_text,
+    extract_issuer_links,
+    match_resume_skills,
+    parse_resume,
+    redact_personal_data,
+)
 from app.services.role_match import _get_role, match_role
 from app.services.sql_depth import safe_sql_depth
 from app.services.skill_depth import compute_skill_depth
@@ -205,12 +211,19 @@ def build_passport(
     ingestion["gist_count"] = len(gist_repos)
     if certificate_bytes:
         progress("Reading certificates")
-        certificate_groups = [
-            parse_certificate(file_bytes) for file_bytes in certificate_bytes
-        ]
+        certificate_texts = [extract_certificate_text(file_bytes) for file_bytes in certificate_bytes]
+        certificate_groups = [match_resume_skills(text) for text in certificate_texts]
         certificate_skills = _merge_skill_matches(*certificate_groups)
+        issuer_links = list(
+            {
+                link["url"].lower(): link
+                for text in certificate_texts
+                for link in extract_issuer_links(text)
+            }.values()
+        )
     else:
         certificate_skills = certificate_skill_mentions or []
+        issuer_links = (existing or {}).get("certificate_links") or []
     if report_files:
         progress("Reading reports")
         parsed_reports = [parse_report(name, content) for name, content in report_files]
@@ -344,6 +357,7 @@ def build_passport(
         ),
         "resume_skill_mentions": resume_skills,
         "certificate_skill_mentions": certificate_skills,
+        "certificate_links": issuer_links,
         "generation_warning": generation_warning,
         "generation_error": generation_error,
         # The rules this passport was built with; recheck_all.py --only-incomplete rebuilds older ones.

@@ -70,29 +70,38 @@ from app.services.json_cache import prune_json_cache
 from app.services.packets import requirement_packets
 from app.services.codeforces_ingest import validate_codeforces_handle
 from app.services.pipeline import ensure_depth_analyzers, run_passport_job, run_recheck_job
+from app.services.roadmap import build_roadmap
 from app.services.report_parse import MAX_REPORTS, safe_filename, validate_portfolio_url
 from app.services.sql_depth import student_sql_depth
 from app.services.skill_depth import student_skill_depth
 from app.services.storage import (
+    EVIDENCE_REVIEW_STATUSES,
+    add_evidence_review,
     check_storage_rate_limit,
     check_storage_ready,
     complete_interview_session,
+    create_evidence_request,
     create_recruiter_session,
     create_review_request,
+    evidence_audit_trail,
     delete_recruiter_session,
     fail_interview_session,
     get_custom_role,
+    get_evidence_request,
     get_interview_session,
     get_passport,
     get_passport_owner_token_hash,
     get_recruiter_session,
     get_review_requests_by_passports,
+    list_evidence_review_states,
     list_interview_outcomes,
     list_interview_sessions,
+    list_evidence_requests,
     list_passports_page,
     list_latest_passports_page,
     list_review_requests,
     mark_review_request_reviewed,
+    respond_evidence_request,
     prune_old_jobs,
     prune_old_rate_limits,
     reconcile_interrupted_jobs,
@@ -345,6 +354,7 @@ STUDENT_EXCLUDED_REASON = (
     "work (for example, an earlier project under another account), request a review."
 )
 MAX_REVIEW_REQUESTS = 10
+MAX_EVIDENCE_REQUESTS = 10
 
 
 def _student_excluded_item(item: dict[str, Any], requests: list[dict[str, Any]]) -> dict[str, Any]:
@@ -402,6 +412,7 @@ def student_view(passport: dict[str, Any], requests: list[dict[str, Any]] | None
                 view["skill_depth"].pop("sql", None)
         else:
             view.pop("skill_depth")
+    view["roadmap"] = build_roadmap(view)
     return view
 
 
@@ -434,6 +445,7 @@ def review_view(passport: dict[str, Any]) -> dict[str, Any]:
         **_without_disabled_features(passport),
         "check_labels": CHECK_LABELS,
         "review_requests": list_review_requests(passport["id"]),
+        "evidence_requests": list_evidence_requests(passport["id"]),
         # Computed on read (deterministic, no LLM), so stored passports get it too.
         "requirement_packets": requirement_packets(passport),
     }
@@ -920,7 +932,9 @@ def _stored_passport(
 
 @app.get("/passport/{passport_id}")
 def passport(passport_id: str, background_tasks: BackgroundTasks) -> dict:
-    return student_view(_stored_passport(passport_id, background_tasks), list_review_requests(passport_id))
+    view = student_view(_stored_passport(passport_id, background_tasks), list_review_requests(passport_id))
+    view["evidence_requests"] = list_evidence_requests(passport_id)
+    return view
 
 
 @app.get("/passport/{passport_id}/review", dependencies=[Depends(require_recruiter)])
@@ -998,6 +1012,106 @@ def mark_reviewed(request_id: str, reviewer_id: str = Depends(require_recruiter_
     if not result:
         raise HTTPException(status_code=404, detail="Review request not found.")
     return result
+
+
+class EvidenceRequestBody(BaseModel):
+    skill_id: str = Field(min_length=1, max_length=120)
+    note: str = Field(default="", max_length=1000)
+
+
+class EvidenceResponseBody(BaseModel):
+    response: str = Field(min_length=1, max_length=2000)
+
+
+@app.post("/passport/{passport_id}/evidence-requests", status_code=201)
+def create_passport_evidence_request(
+    passport_id: str,
+    body: EvidenceRequestBody,
+    background_tasks: BackgroundTasks,
+    reviewer_id: str = Depends(require_recruiter_write),
+) -> dict:
+    """A recruiter asks the candidate for more evidence on one skill. The candidate sees the
+    ask on their passport page and answers in place; both sides land in the audit trail."""
+    stored = _stored_passport(passport_id, background_tasks, queue_backfill=False)
+    skill_ids = {skill.get("skill_id") for skill in stored.get("skills", [])}
+    if body.skill_id not in skill_ids:
+        raise HTTPException(status_code=422, detail="Evidence can only be requested for a skill on this passport.")
+    result, reason = create_evidence_request(
+        passport_id, body.skill_id, body.note.strip(), reviewer_id, MAX_EVIDENCE_REQUESTS
+    )
+    if reason == "limit":
+        raise HTTPException(status_code=429, detail=f"At most {MAX_EVIDENCE_REQUESTS} evidence requests per passport.")
+    if reason == "duplicate":
+        raise HTTPException(status_code=409, detail="An evidence request is already open for this skill.")
+    if result is None:
+        raise HTTPException(status_code=500, detail="Could not create evidence request.")
+    _maybe_queue_depth_backfill(stored, background_tasks)
+    return result
+
+
+@app.post("/evidence-requests/{request_id}/respond")
+def respond_passport_evidence_request(
+    request_id: str,
+    body: EvidenceResponseBody,
+    x_passport_token: str | None = Header(default=None),
+) -> dict:
+    """The candidate answers an open evidence request. Only the passport owner's session."""
+    existing = get_evidence_request(request_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Evidence request not found.")
+    _require_passport_access(existing["passport_id"], x_passport_token)
+    if existing["status"] != "open":
+        raise HTTPException(status_code=409, detail="This evidence request has already been answered.")
+    result = respond_evidence_request(request_id, body.response.strip())
+    if not result:
+        raise HTTPException(status_code=409, detail="This evidence request has already been answered.")
+    return result
+
+
+class EvidenceReviewBody(BaseModel):
+    skill_id: str = Field(min_length=1, max_length=120)
+    citation: str = Field(min_length=1, max_length=600)
+    status: str
+    note: str = Field(default="", max_length=1000)
+
+
+@app.post("/passport/{passport_id}/evidence-reviews", status_code=201)
+def create_evidence_review(
+    passport_id: str,
+    body: EvidenceReviewBody,
+    background_tasks: BackgroundTasks,
+    reviewer_id: str = Depends(require_recruiter_write),
+) -> dict:
+    """A recruiter records a decision about one cited evidence item. Append-only: every
+    decision lands in the audit trail, a changed mind is a new event, never an edit."""
+    if body.status not in EVIDENCE_REVIEW_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status must be one of: {', '.join(EVIDENCE_REVIEW_STATUSES)}.",
+        )
+    _stored_passport(passport_id, background_tasks)
+    return add_evidence_review(
+        passport_id,
+        body.skill_id.strip(),
+        body.citation.strip(),
+        body.status,
+        body.note.strip(),
+        reviewer_id,
+    )
+
+
+@app.get("/passport/{passport_id}/evidence-reviews", dependencies=[Depends(require_recruiter)])
+def get_evidence_reviews(passport_id: str, background_tasks: BackgroundTasks) -> dict:
+    """Current review state per citation (latest decision wins), for the evidence review page."""
+    _stored_passport(passport_id, background_tasks)
+    return {"reviews": list_evidence_review_states(passport_id)}
+
+
+@app.get("/passport/{passport_id}/audit-trail", dependencies=[Depends(require_recruiter)])
+def get_audit_trail(passport_id: str, background_tasks: BackgroundTasks) -> dict:
+    """Every auditable event on the passport, oldest first."""
+    _stored_passport(passport_id, background_tasks)
+    return {"events": evidence_audit_trail(passport_id)}
 
 
 @app.post("/passport/{passport_id}/recheck", status_code=202)

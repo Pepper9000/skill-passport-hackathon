@@ -1,6 +1,8 @@
 import { AlertTriangle, Check, CircleHelp, ExternalLink, FileCode2, FlaskConical, X } from "lucide-react";
-import { DEFAULT_CHECK_LABELS, skillLabel, type Evidence, type PassportSkill } from "../api";
-import { showsNotCountedNote } from "../evidencePanel";
+import { useState } from "react";
+import { DEFAULT_CHECK_LABELS, skillLabel, type Evidence, type EvidenceReview, type EvidenceReviewStatus, type PassportSkill } from "../api";
+import { auditStatus, auditTime } from "../auditStatus";
+import { evidenceCitation, showsNotCountedNote } from "../evidencePanel";
 import type { Audience } from "./RejectedClaims";
 import SkillLevel from "./SkillLevel";
 
@@ -26,8 +28,55 @@ function LinesWrittenRow({ item, label }: { item: Evidence; label: string }) {
   return <span className="check-pass"><Check size={13} /> {text}</span>;
 }
 
-export default function EvidencePanel({ skill, audience, labels }: {
+function ReviewControls({ citation, current, onReview }: {
+  citation: string; current?: EvidenceReview;
+  onReview: (citation: string, status: EvidenceReviewStatus, note: string) => Promise<void>;
+}) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const decide = (status: EvidenceReviewStatus) => {
+    setBusy(true);
+    setError("");
+    onReview(citation, status, note.trim())
+      .catch((reason: Error) => setError(reason.message))
+      .finally(() => setBusy(false));
+  };
+  const meta = current ? auditStatus(current.status) : null;
+  return (
+    <div className="review-controls">
+      {current && meta && (
+        <p className="review-current">
+          <span className={`status-mark ${meta.className}`}>
+            <span className="status-dot" aria-hidden="true" />{meta.label}
+          </span>
+          <span className="review-meta">{current.reviewer_id} · {auditTime(current.created_at)}</span>
+        </p>
+      )}
+      <div className="review-form-row">
+        <label className="review-note">
+          <span>Note</span>
+          <input
+            type="text" value={note} maxLength={1000} placeholder="Reason for this decision…"
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
+        <div className="review-actions">
+          <button className="button review-decide" disabled={busy} onClick={() => decide("verified")}>Verify</button>
+          <button className="button button-light review-decide review-flag" disabled={busy} onClick={() => decide("flagged")}>Flag</button>
+          <button className="button button-light review-decide review-reject" disabled={busy} onClick={() => decide("rejected")}>Reject</button>
+        </div>
+      </div>
+      {current?.note && <p className="review-latest"><span>Note</span>{current.note}</p>}
+      {error && <p className="notice notice-error">{error}</p>}
+    </div>
+  );
+}
+
+export default function EvidencePanel({ skill, audience, labels, reviews, onReview }: {
   skill: PassportSkill; audience: Audience; labels?: Record<string, string>;
+  reviews?: Record<string, EvidenceReview>;
+  onReview?: (citation: string, status: EvidenceReviewStatus, note: string) => Promise<void>;
 }) {
   const label = (item: Evidence, key: string) => (
     item.file_path === GIT_HISTORY && key === "file_exists" ? "Commit history found" : labels?.[key] ?? DEFAULT_CHECK_LABELS[key]
@@ -113,6 +162,13 @@ export default function EvidencePanel({ skill, audience, labels }: {
                   <dt>Rules applied</dt><dd>{item.record.rules_applied.join(", ")}</dd>
                 </dl>
               </details>
+            )}
+            {audience === "recruiter" && onReview && (
+              <ReviewControls
+                citation={evidenceCitation(skill.skill_id, item)}
+                current={reviews?.[evidenceCitation(skill.skill_id, item)]}
+                onReview={onReview}
+              />
             )}
             <small className="commit-label">Revision {item.commit_sha}</small>
           </article>

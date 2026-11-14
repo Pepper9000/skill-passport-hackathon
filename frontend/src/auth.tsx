@@ -14,6 +14,7 @@ export type { DemoProfile, User, UserRole };
 export { DEMO_PROFILES, canAccessRoute };
 
 const STORAGE_KEY = "skill_passport_auth_session";
+const LOGIN_DISMISSED_KEY = "skill_passport_login_dismissed";
 const SESSION_ENDED = "Your recruiter session has ended. Sign in again to continue.";
 
 interface AuthContextType {
@@ -59,7 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // with /auth/me. A keyless development server holds no token, yet its sign-in is valid,
       // so the profile is kept until the server answers instead of being dropped on refresh.
       const user = parseStoredUser(localStorage.getItem(STORAGE_KEY));
-      return { user, isLoginModalOpen: !user };
+      const dismissed = !user && sessionStorage.getItem(LOGIN_DISMISSED_KEY) === "1";
+      return { user, isLoginModalOpen: !user && !dismissed };
     } catch {
       return { user: null, isLoginModalOpen: true };
     }
@@ -205,7 +207,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authError,
         openLoginModal: () => setIsLoginModalOpen(true),
         closeLoginModal: () => {
-          if (user) setIsLoginModalOpen(false);
+          // Round 3: a first-time visitor must be able to reach the Create form without
+          // signing in; the demo gate stays as an auto-open modal but is now dismissible.
+          try {
+            sessionStorage.setItem(LOGIN_DISMISSED_KEY, "1");
+          } catch {
+            // storage unavailable
+          }
+          setIsLoginModalOpen(false);
         },
         login,
         quickLogin,

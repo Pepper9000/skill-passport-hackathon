@@ -146,3 +146,25 @@ def test_oversized_pdf_page_is_scaled_before_pixmap_allocation() -> None:
     assert width * height <= resume_parse.MAX_CERTIFICATE_OCR_PIXELS
     assert max(width, height) <= resume_parse.MAX_CERTIFICATE_OCR_SIDE
     assert captured["alpha"] is False
+
+
+def test_extract_issuer_links_finds_verification_urls() -> None:
+    text = (
+        "Certificate of Completion\n"
+        "Verify at coursera.org/verify/ABC123XY\n"
+        "Also shared at https://www.credly.com/badges/2b3f27e9-1234-4cde-9f01-abcdef012345/public_url\n"
+        "udemy.com/certificate/UC-1234abcd-5678/.\n"
+        "Duplicate: https://coursera.org/verify/ABC123XY\n"
+        "Not an issuer link: https://github.com/xGTAT and https://example.com/certificate/123\n"
+    )
+    links = resume_parse.extract_issuer_links(text)
+    by_issuer = {link["issuer"]: link["url"] for link in links}
+    assert by_issuer["Coursera"] == "https://coursera.org/verify/ABC123XY"
+    assert by_issuer["Credly"].startswith("https://www.credly.com/badges/")
+    assert by_issuer["Udemy"] == "https://udemy.com/certificate/UC-1234abcd-5678/"
+    assert len(links) == 3  # the duplicate Coursera URL collapses
+    assert all(link["url"].startswith("https://") for link in links)
+
+
+def test_extract_issuer_links_empty_when_no_issuers() -> None:
+    assert resume_parse.extract_issuer_links("Certificate of Participation in a workshop.") == []
