@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, isMissingJobError, type Passport, type PassportSkill } from "../api";
 import CompetitiveProgrammingPanel from "../components/CompetitiveProgrammingPanel";
 import CoverageSummary from "../components/CoverageSummary";
+import { EvidenceQuestions } from "../components/EvidenceAsks";
 import Roadmap from "../components/Roadmap";
 import EvidencePanel from "../components/EvidencePanel";
 import GrowthCard from "../components/GrowthCard";
@@ -203,6 +204,10 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
       </details>
       <div className="passport-grid">
         <div className="skill-column">
+          {audience === "student" && (passport.evidence_requests?.length ?? 0) > 0 && (
+            <EvidenceQuestions passportId={passport.id} requests={passport.evidence_requests ?? []}
+              onChanged={() => { load().catch((reason: Error) => setError(reason.message)); }} />
+          )}
           <section className="panel skill-panel">
             <div className="panel-heading"><div><div className="eyebrow">FROM THE ANALYSED FILES</div><h2>Evidence from your work</h2></div><span className="count-tag">{verified.length} skills</span></div>
             {verified.length ? (

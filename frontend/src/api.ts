@@ -121,6 +121,18 @@ export type ReviewRequest = {
   reviewer_id?: string | null;
 };
 
+export type EvidenceRequest = {
+  id: string;
+  passport_id: string;
+  skill_id: string;
+  note: string;
+  recruiter_id: string;
+  created_at: string;
+  status: "open" | "responded";
+  response: string;
+  responded_at: string | null;
+};
+
 export type EvidenceReviewStatus = "verified" | "flagged" | "rejected";
 
 export type EvidenceReview = {
@@ -136,7 +148,7 @@ export type EvidenceReview = {
 
 export type AuditEvent = {
   at: string;
-  kind: "evidence_review" | "review_requested" | "review_marked_reviewed";
+  kind: "evidence_review" | "review_requested" | "review_marked_reviewed" | "evidence_requested" | "evidence_responded";
   actor: string;
   summary: string;
   skill_id: string | null;
@@ -274,6 +286,8 @@ export type Passport = {
   check_labels?: Record<string, string>;
   /** Review endpoints only. */
   review_requests?: ReviewRequest[];
+  /** Recruiter asks for more evidence, with the candidate's answers. */
+  evidence_requests?: EvidenceRequest[];
   /** Review endpoints only: one reviewer-ready packet per role requirement. */
   requirement_packets?: RequirementPacket[];
   /** Review endpoints only: account ownership and resume link checks. */
@@ -798,6 +812,21 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  askEvidence: (passportId: string, body: { skill_id: string; note: string }) =>
+    reviewRequest<EvidenceRequest>(`/passport/${passportId}/evidence-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  respondEvidence: (passportId: string, requestId: string, response: string) => {
+    const token = sessionStorage.getItem(`passport-token:${passportId}`);
+    if (!token) throw new Error("Answers must be submitted from the browser session that created this passport.");
+    return request<EvidenceRequest>(`/evidence-requests/${requestId}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Passport-Token": token },
+      body: JSON.stringify({ response }),
+    });
+  },
   auditTrail: (passportId: string) =>
     reviewRequest<{ events: AuditEvent[] }>(`/passport/${passportId}/audit-trail`),
   recheck: async (id: string) => {

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, type AuditEvent, type EvidenceReview, type EvidenceReviewStatus, type Passport, type PassportSkill } from "../api";
 import AuditTrail from "../components/AuditTrail";
+import { EvidenceAskPanel } from "../components/EvidenceAsks";
 import SkillName from "../components/SkillName";
 import CoverageSummary from "../components/CoverageSummary";
 import EvidencePanel from "../components/EvidencePanel";
@@ -133,6 +134,21 @@ export default function RecruiterEvidence() {
                   })
               } />
           ) : <section className="panel empty-evidence">Select a skill to inspect its evidence trail.</section>}
+          {selected && (
+            <EvidenceAskPanel passportId={passport.id} skillId={selected.skill_id}
+              requests={passport.evidence_requests ?? []} readOnly={user?.readOnly}
+              onChanged={() => {
+                if (passport.id !== activeId.current) return;
+                const version = ++loadVersion.current;
+                Promise.all([api.reviewPassport(id), api.auditTrail(id)])
+                  .then(([data, nextTrail]) => {
+                    if (version !== loadVersion.current) return;
+                    setPassport(data);
+                    setTrail(nextTrail.events);
+                  })
+                  .catch((reason: Error) => { if (version === loadVersion.current) setError(reason.message); });
+              }} />
+          )}
           <AuditTrail trail={trail} />
         </aside>
       </div>

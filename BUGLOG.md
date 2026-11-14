@@ -105,3 +105,27 @@ changing since demo copy says recruiter sign-in is server-checked).
 6. Backend 666/666 tests, frontend 47/47 tests, tsc clean.
 
 Local-only commit on round3-bugfixes; NOT pushed (waiting for go-ahead).
+
+## 2026-11-14 22:32 - Round 3 pushed
+
+Audit trail UI rebuilt in the site's design language (design-skills repo applied); commit 7eb7ede.
+Push mechanism: fine-grained PATs cannot scope to collaborator repos (Pepper9000-owned), so a
+CLASSIC PAT with public_repo scope only, 7-day expiry, named skill-passport-round3-push was used.
+Local history force-pushed over the web-UI transport commits (same content; only final-line
+indentation differed). Remote head now 7eb7ede: 52bab27 (reviews/audit/roadmap) + 7eb7ede (audit UI).
+REVOKE POST-JOB: the classic public_repo token AND the read-only fine-grained PAT.
+
+## Gap fixes (Nov 14, ~10:45-10:55 PM)
+
+### M1: GitHub ingest rate-limit resilience + HTTP cache
+- Fix: `_get` honors Retry-After, then X-RateLimit-Reset (capped at 15 min), else bounded exponential backoff (4 attempts). `_request` caches per URL: ETag/If-None-Match revalidation (304 serves cached body), content-addressed URLs (40-hex SHA) served permanently from cache.
+- Verified: 4 new tests; full backend suite 669 passed at time of commit (673 after M2).
+- Commit: 883ea09 (local, NOT pushed).
+
+### M2: "Ask for evidence" recruiter action + student response flow
+- Backend: evidence_requests table (one open ask per skill, max 10/passport); POST /passport/{id}/evidence-requests (recruiter write), POST /evidence-requests/{id}/respond (owner token only); asks and answers land in the audit trail (evidence_requested / evidence_responded); student + recruiter passport views include evidence_requests.
+- Frontend: "Ask the candidate" panel on recruiter evidence page (composer + ask list); "Questions about your evidence" panel on student passport (answer form for open asks); dot+word statuses per design-skills (Request / Answered); mobile wrap rule for ask rows.
+- Live verified on fresh demo passport cfb84c36-9177-4cc1-8412-2ebeb7afdbae: recruiter asked (python), student answered in the same session, both sides show Answered, audit trail shows both events. Error path verified: answering from a session without the owner token shows "Answers must be submitted from the browser session that created this passport."
+- Known limitation (existing design): the answer form only works in the browser session that created the passport (sessionStorage token) - same constraint as re-check.
+- Tests: 4 new API tests; backend 673 passed, frontend 47 passed, tsc clean.
+- Screenshots: recruiter desktop + mobile, student desktop + mobile.

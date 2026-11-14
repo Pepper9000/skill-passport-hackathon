@@ -1044,3 +1044,24 @@ a.row:hover .row-name { text-decoration: underline; text-underline-offset: 3px; 
 .must-tag { font-size: 0.72rem; font-weight: 700; color: var(--danger); letter-spacing: 0.04em; }
 .roadmap-actions { margin: 0.5rem 0 0; padding-left: 1.4rem; }
 .roadmap-actions li { margin: 0.25rem 0; }
+
+/* Recruiter "ask for evidence" and the student's answer flow. Same dot + word
+   status language as the audit trail; answers in the ink, questions in muted. */
+.ask-panel { margin-top: 16px; }
+.skill-column > .ask-panel:first-child { margin-top: 0; }
+.ask-list { list-style: none; margin: 0; padding: 0; }
+.ask-row { display: flex; gap: 12px; align-items: baseline; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+.ask-row:last-child { border-bottom: 0; }
+.ask-row .status-mark { flex: none; width: 74px; }
+.ask-body { min-width: 0; flex: 1; }
+.ask-body > p { margin: 0; color: var(--ink-soft); font-size: 11.5px; line-height: 1.5; text-wrap: pretty; overflow-wrap: anywhere; }
+.ask-body strong { color: var(--ink); font-weight: 600; }
+.ask-body .review-form-row { margin-top: 8px; }
+.ask-answer { margin-top: 4px !important; color: var(--ink) !important; }
+.ask-row time { flex: none; color: var(--subtle); font-family: var(--font-mono); font-size: 9px; letter-spacing: .4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+@media (max-width: 700px) {
+  .ask-row { flex-wrap: wrap; gap: 6px 10px; }
+  .ask-row .ask-body { flex-basis: calc(100% - 86px); }
+  .ask-row time { margin-left: 0; width: 100%; }
+}

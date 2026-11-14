@@ -6,6 +6,7 @@ export const AUDIT_STATUS: Record<string, { label: string; className: string }> 
   rejected: { label: "Rejected", className: "status-rejected" },
   open: { label: "Request", className: "status-request" },
   reviewed: { label: "Closed", className: "status-closed" },
+  responded: { label: "Answered", className: "status-verified" },
 };
 
 export const auditStatus = (status: string) =>

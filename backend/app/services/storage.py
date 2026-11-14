@@ -147,6 +147,29 @@ def initialize_storage() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_evidence_reviews_passport ON evidence_reviews (passport_id, citation, created_at)"
         )
+        # Recruiter asks for evidence: one open ask per skill, the student answers in place.
+        # Append-only like the rest of the audit data; an answered ask stays as history.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evidence_requests (
+                id TEXT PRIMARY KEY,
+                passport_id TEXT NOT NULL,
+                skill_id TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                recruiter_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                response TEXT NOT NULL DEFAULT '',
+                responded_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_requests_one_open
+            ON evidence_requests (passport_id, skill_id) WHERE status = 'open'
+            """
+        )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS rate_limits (
@@ -548,6 +571,82 @@ def mark_review_request_reviewed(request_id: str, reviewer_id: str) -> dict[str,
     return dict(row) if row else None
 
 
+def create_evidence_request(
+    passport_id: str, skill_id: str, note: str, recruiter_id: str, max_requests: int
+) -> tuple[dict[str, Any] | None, str | None]:
+    """A recruiter asks the student for more evidence on one skill. One open ask per skill."""
+    initialize_storage()
+    request = {
+        "id": str(uuid.uuid4()),
+        "passport_id": passport_id,
+        "skill_id": skill_id,
+        "note": note,
+        "recruiter_id": recruiter_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "open",
+        "response": "",
+        "responded_at": None,
+    }
+    with _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE;")
+        duplicate = connection.execute(
+            """
+            SELECT 1 FROM evidence_requests
+            WHERE passport_id = ? AND skill_id = ? AND status = 'open'
+            """,
+            (passport_id, skill_id),
+        ).fetchone()
+        if duplicate:
+            return None, "duplicate"
+        count = connection.execute(
+            "SELECT COUNT(*) AS count FROM evidence_requests WHERE passport_id = ?",
+            (passport_id,),
+        ).fetchone()["count"]
+        if count >= max_requests:
+            return None, "limit"
+        connection.execute(
+            """
+            INSERT INTO evidence_requests
+            (id, passport_id, skill_id, note, recruiter_id, created_at, status, response, responded_at)
+            VALUES (:id, :passport_id, :skill_id, :note, :recruiter_id, :created_at, :status, :response, :responded_at)
+            """,
+            request,
+        )
+    return request, None
+
+
+def list_evidence_requests(passport_id: str) -> list[dict[str, Any]]:
+    initialize_storage()
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM evidence_requests WHERE passport_id = ? ORDER BY created_at, id", (passport_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_evidence_request(request_id: str) -> dict[str, Any] | None:
+    initialize_storage()
+    with _connect() as connection:
+        row = connection.execute("SELECT * FROM evidence_requests WHERE id = ?", (request_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def respond_evidence_request(request_id: str, response: str) -> dict[str, Any] | None:
+    """The student answers an open ask. Only an open request can be answered, once."""
+    initialize_storage()
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE evidence_requests
+            SET status = 'responded', response = ?, responded_at = ?
+            WHERE id = ? AND status = 'open'
+            """,
+            (response, datetime.now(timezone.utc).isoformat(), request_id),
+        )
+        row = connection.execute("SELECT * FROM evidence_requests WHERE id = ?", (request_id,)).fetchone()
+    return dict(row) if row else None
+
+
 EVIDENCE_REVIEW_STATUSES = ("verified", "flagged", "rejected")
 
 
@@ -613,6 +712,10 @@ def evidence_audit_trail(passport_id: str) -> list[dict[str, Any]]:
             "SELECT * FROM review_requests WHERE passport_id = ? ORDER BY created_at, id",
             (passport_id,),
         ).fetchall()
+        asks = connection.execute(
+            "SELECT * FROM evidence_requests WHERE passport_id = ? ORDER BY created_at, id",
+            (passport_id,),
+        ).fetchall()
     for row in reviews:
         item = dict(row)
         events.append({
@@ -647,6 +750,29 @@ def evidence_audit_trail(passport_id: str) -> list[dict[str, Any]]:
                 "citation": item["citation_key"],
                 "status": "reviewed",
                 "note": "",
+            })
+    for row in asks:
+        item = dict(row)
+        events.append({
+            "at": item["created_at"],
+            "kind": "evidence_requested",
+            "actor": item["recruiter_id"],
+            "summary": f"asked the candidate for more evidence on {item['skill_id']}",
+            "skill_id": item["skill_id"],
+            "citation": None,
+            "status": "open",
+            "note": item.get("note") or "",
+        })
+        if item.get("responded_at"):
+            events.append({
+                "at": item["responded_at"],
+                "kind": "evidence_responded",
+                "actor": "student",
+                "summary": f"responded to the evidence request for {item['skill_id']}",
+                "skill_id": item["skill_id"],
+                "citation": None,
+                "status": "responded",
+                "note": item.get("response") or "",
             })
     events.sort(key=lambda event: event["at"])
     return events
