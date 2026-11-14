@@ -133,3 +133,9 @@ REVOKE POST-JOB: the classic public_repo token AND the read-only fine-grained PA
 ### M3: issuer-link document signals (backend verified, UI panel committed)
 - Fix: certificate text is scanned for public issuer verification URLs (Coursera, Credly, Udemy, freeCodeCamp, Google Cloud); links are deduped and stored as certificate_links on the passport (survive re-check); recruiter evidence page shows a "Certificates" panel with "Verify at issuer" links.
 - Verified: extractor unit tests (2 new); suite 675 passed; live run on passport c95dc741-eca9-4e4a-b337-6a8229d88eba extracted https://coursera.org/verify/XKCD42DEMO from an uploaded certificate PDF. UI panel committed; desktop/mobile screenshots of the panel NOT yet captured (run limit).
+
+### M4: Gist read-only live run
+- Ran the create flow with xGTAT's existing public gist 78eab0b75a608fe0139bb8cd9e47b568 (read-only; no gist created).
+- Live result: gist metadata + commits fetched from the GitHub API with the read-only PAT, ownership accepted (xGTAT), then correctly rejected: "The Gist contains no readable source-code files supported for analysis." Verified all 7 public gists are single gistfile1.txt ownership proofs, so no owned source-bearing gist exists for the success path (creating one is not approved).
+- Success path (bounded source extraction, wrong-owner/private/forked rejection, revision-pinned permalinks) is covered by the 7 mocked tests in tests/test_gist_ingest.py, all passing.
+- Infra note: both Cloudflare tunnels died mid-run (530); recreated (FE https://channels-therefore-weekly-competitors.trycloudflare.com, BE https://modelling-anniversary-reputation-denver.trycloudflare.com), backend/.env FRONTEND_ORIGINS updated, vite restarted with the new VITE_API_BASE_URL. Recruiter session re-established on the new origin (localStorage is per-origin).
