@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { showsNotCountedNote } from "../src/evidencePanel.ts";
+import { evidenceCitation, showsNotCountedNote } from "../src/evidencePanel.ts";
 
 const evidence = (type: "code" | "dependency" | "config" | "commit", authored?: boolean, test_file_group = false) => ({
   type,
@@ -18,4 +18,11 @@ test("does not show the not-counted note for authored or unchecked evidence", ()
   assert.equal(showsNotCountedNote(evidence("dependency", true)), false);
   assert.equal(showsNotCountedNote(evidence("config")), false);
   assert.equal(showsNotCountedNote(evidence("code", false)), false);
+});
+
+test("evidenceCitation builds the stable citation key", () => {
+  assert.equal(
+    evidenceCitation("python", { repo: "demo", file_path: "helpers.py", start_line: 3, end_line: 7 }),
+    "python:demo:helpers.py:3-7",
+  );
 });

@@ -1,5 +1,6 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import re
 import time
@@ -145,36 +146,113 @@ def _list_candidate_repositories(
     return repositories, eligible[:MAX_REPOS], skipped, listing_truncated
 
 
+# Rate-limit recovery, per GitHub's REST best practices: honor Retry-After, fall back
+# to X-RateLimit-Reset, and use bounded exponential backoff when the server gives no
+# timing. Waits are capped so a job pauses and resumes instead of failing when the
+# pause is reasonable, and still fails cleanly when the reset is far out.
+RATE_LIMIT_MAX_WAIT_SECONDS = 15 * 60
+RATE_LIMIT_MAX_ATTEMPTS = 4
+SECONDARY_BACKOFF_BASE_SECONDS = 60
+
+_sleep = time.sleep
+
+
+def _is_rate_limited(status_code: int, message: str, remaining: str) -> bool:
+    return status_code == 429 or (
+        status_code == 403 and (remaining == "0" or "rate limit" in message.lower())
+    )
+
+
+def _rate_limit_wait_seconds(response: httpx.Response, attempt: int) -> int | None:
+    """Seconds to wait before retrying, or None to fail fast (reset too far out)."""
+    retry_after = response.headers.get("Retry-After")
+    if retry_after and retry_after.isdigit():
+        return min(int(retry_after), RATE_LIMIT_MAX_WAIT_SECONDS)
+    reset = response.headers.get("X-RateLimit-Reset")
+    if reset and reset.isdigit():
+        wait = int(reset) - int(time.time()) + 2
+        # A primary-limit reset inside the cap is worth waiting out; beyond it, fail fast.
+        return wait if 0 < wait <= RATE_LIMIT_MAX_WAIT_SECONDS else None
+    # Secondary limits without timing guidance: >=60s, doubling per GitHub's docs.
+    return min(SECONDARY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)), RATE_LIMIT_MAX_WAIT_SECONDS)
+
+
 def _get(client: httpx.Client, url: str, **kwargs: Any) -> httpx.Response:
-    response = client.get(url, **kwargs)
-    if response.status_code == 404:
-        if re.fullmatch(r"https://api\.github\.com/users/[^/]+", url):
-            raise GitHubUserNotFoundError("GitHub account was not found.")
-        raise GitHubIngestError(f"GitHub resource not found: {url}")
-    if response.status_code == 401:
-        raise GitHubAuthenticationError("GitHub rejected the configured API credentials.")
-    message = response.reason_phrase
-    if response.is_error:
-        try:
-            message = response.json().get("message", response.reason_phrase)
-        except (ValueError, AttributeError):
-            pass
-    remaining = response.headers.get("X-RateLimit-Remaining", "unknown")
-    if response.status_code == 429 or (
-        response.status_code == 403 and (remaining == "0" or "rate limit" in str(message).lower())
-    ):
-        reset = response.headers.get("X-RateLimit-Reset")
-        detail = "GitHub API rate limit exceeded"
-        if reset:
-            detail += f"; reset at Unix time {reset}"
-        raise GitHubRateLimitError(f"{detail} (remaining={remaining})")
-    if response.is_error:
-        raise GitHubIngestError(f"GitHub API returned {response.status_code}: {message}")
-    return response
+    for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+        response = client.get(url, **kwargs)
+        if response.status_code == 404:
+            if re.fullmatch(r"https://api\.github\.com/users/[^/]+", url):
+                raise GitHubUserNotFoundError("GitHub account was not found.")
+            raise GitHubIngestError(f"GitHub resource not found: {url}")
+        if response.status_code == 401:
+            raise GitHubAuthenticationError("GitHub rejected the configured API credentials.")
+        message = response.reason_phrase
+        if response.is_error:
+            try:
+                message = response.json().get("message", response.reason_phrase)
+            except (ValueError, AttributeError):
+                pass
+        remaining = response.headers.get("X-RateLimit-Remaining", "unknown")
+        if _is_rate_limited(response.status_code, str(message), remaining):
+            reset = response.headers.get("X-RateLimit-Reset")
+            detail = "GitHub API rate limit exceeded"
+            if reset:
+                detail += f"; reset at Unix time {reset}"
+            if attempt < RATE_LIMIT_MAX_ATTEMPTS:
+                wait = _rate_limit_wait_seconds(response, attempt)
+                if wait is not None and wait > 0:
+                    _sleep(wait)
+                    continue
+            raise GitHubRateLimitError(f"{detail} (remaining={remaining})")
+        if response.is_error:
+            raise GitHubIngestError(f"GitHub API returned {response.status_code}: {message}")
+        return response
+    raise GitHubRateLimitError("GitHub API rate limit exceeded")  # unreachable, keeps typing happy
+
+
+# Per-URL HTTP cache: ETag revalidation for pollable JSON endpoints (304 responses
+# don't count against the primary rate limit) and permanent caching for
+# content-addressed URLs (a commit/tree/blob SHA can never change under the same URL).
+_HTTP_CACHE_DIR = CACHE_DIR / "http"
+_IMMUTABLE_URL = re.compile(r"/(?:commits|git/trees|git/blobs)/[0-9a-f]{40}(?:[/?#]|$)")
+
+
+def _http_cache_path(url: str, params: Any) -> Path:
+    key = url + "|" + json.dumps(params or {}, sort_keys=True, default=str)
+    return _HTTP_CACHE_DIR / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
+
+
+def _http_cache_read(path: Path) -> dict[str, Any] | None:
+    try:
+        entry = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return entry if isinstance(entry, dict) and "body" in entry else None
 
 
 def _request(client: httpx.Client, url: str, **kwargs: Any) -> Any:
-    return _get(client, url, **kwargs).json()
+    cache_path = _http_cache_path(url, kwargs.get("params"))
+    immutable = bool(_IMMUTABLE_URL.search(url))
+    entry = _http_cache_read(cache_path)
+    if immutable and entry is not None:
+        return entry["body"]
+    headers = dict(kwargs.pop("headers", None) or {})
+    if entry and entry.get("etag"):
+        headers["If-None-Match"] = entry["etag"]
+    response = _get(client, url, headers=headers or None, **kwargs)
+    if getattr(response, "status_code", 200) == 304:
+        if entry is not None:
+            return entry["body"]
+        raise GitHubIngestError(f"GitHub returned 304 for an uncached resource: {url}")
+    body = response.json()
+    etag = response.headers.get("etag")
+    if isinstance(body, (dict, list)) and (etag or immutable):
+        try:
+            _HTTP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            write_json_cache(cache_path, {"etag": etag, "body": body})
+        except OSError:
+            pass  # caching is an optimization; never fail the fetch over it
+    return body
 
 
 def _source_candidate(path: str) -> bool:

@@ -1,7 +1,9 @@
-import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { api, type Passport, type PassportSkill } from "../api";
+import { api, type AuditEvent, type EvidenceReview, type EvidenceReviewStatus, type Passport, type PassportSkill } from "../api";
+import AuditTrail from "../components/AuditTrail";
+import { EvidenceAskPanel } from "../components/EvidenceAsks";
 import SkillName from "../components/SkillName";
 import CoverageSummary from "../components/CoverageSummary";
 import EvidencePanel from "../components/EvidencePanel";
@@ -22,6 +24,8 @@ export default function RecruiterEvidence() {
   const [passport, setPassport] = useState<Passport | null>(null);
   const [selected, setSelected] = useState<PassportSkill | null>(null);
   const [error, setError] = useState("");
+  const [reviews, setReviews] = useState<Record<string, EvidenceReview>>({});
+  const [trail, setTrail] = useState<AuditEvent[]>([]);
   const loadVersion = useRef(0);
   const activeId = useRef(id);
   useLayoutEffect(() => { activeId.current = id; }, [id]);
@@ -39,6 +43,12 @@ export default function RecruiterEvidence() {
         setSelected(requested ?? sortedSkills(data)[0] ?? null);
       })
       .catch((reason: Error) => { if (version === loadVersion.current) setError(reason.message); });
+    api.evidenceReviews(id)
+      .then((data) => { if (version === loadVersion.current) setReviews(data.reviews); })
+      .catch(() => { /* reviews are additive; the page still works without them */ });
+    api.auditTrail(id)
+      .then((data) => { if (version === loadVersion.current) setTrail(data.events); })
+      .catch(() => { /* same */ });
     return () => { loadVersion.current += 1; };
   }, [id, searchParams]);
 
@@ -72,6 +82,19 @@ export default function RecruiterEvidence() {
                 : <div className="snapshot-row"><span>No account checks recorded</span><b>—</b></div>}
             </div>
           </section>
+          {passport.certificate_links && passport.certificate_links.length > 0 && (
+            <section className="panel">
+              <h3>Certificates</h3>
+              <div className="panel-list">
+                {passport.certificate_links.map((link) => (
+                  <div className="snapshot-row" key={link.url}><span>{link.issuer}</span>
+                    <a className="icon-link" href={link.url} target="_blank" rel="noreferrer">Verify at issuer <ExternalLink size={12} /></a>
+                  </div>
+                ))}
+              </div>
+              <p className="muted">Public verification links found in the uploaded certificates.</p>
+            </section>
+          )}
         </div>
       </header>
       <div className="facts">
@@ -112,7 +135,34 @@ export default function RecruiterEvidence() {
             }} />
         </div>
         <aside className="evidence-column">
-          {selected ? <EvidencePanel skill={selected} audience="recruiter" labels={passport.check_labels} /> :<section className="panel empty-evidence">Select a skill to inspect its evidence trail.</section>}
+          {selected ? (
+            <EvidencePanel skill={selected} audience="recruiter" labels={passport.check_labels}
+              reviews={reviews}
+              onReview={user?.readOnly ? undefined : (citation, status: EvidenceReviewStatus, note: string) =>
+                api.reviewEvidence(passport.id, { skill_id: selected.skill_id, citation, status, note })
+                  .then(() => Promise.all([api.evidenceReviews(passport.id), api.auditTrail(passport.id)]))
+                  .then(([nextReviews, nextTrail]) => {
+                    setReviews(nextReviews.reviews);
+                    setTrail(nextTrail.events);
+                  })
+              } />
+          ) : <section className="panel empty-evidence">Select a skill to inspect its evidence trail.</section>}
+          {selected && (
+            <EvidenceAskPanel passportId={passport.id} skillId={selected.skill_id}
+              requests={passport.evidence_requests ?? []} readOnly={user?.readOnly}
+              onChanged={() => {
+                if (passport.id !== activeId.current) return;
+                const version = ++loadVersion.current;
+                Promise.all([api.reviewPassport(id), api.auditTrail(id)])
+                  .then(([data, nextTrail]) => {
+                    if (version !== loadVersion.current) return;
+                    setPassport(data);
+                    setTrail(nextTrail.events);
+                  })
+                  .catch((reason: Error) => { if (version === loadVersion.current) setError(reason.message); });
+              }} />
+          )}
+          <AuditTrail trail={trail} />
         </aside>
       </div>
     </div>

@@ -110,16 +110,14 @@ export default function LoginModal() {
   return (
     <div className="auth-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
       <div className="auth-modal-card" ref={dialogRef} tabIndex={-1}>
-        {user && (
-          <button
-            type="button"
-            className="auth-modal-close"
-            onClick={closeLoginModal}
-            aria-label="Close login modal"
-          >
-            <X size={18} />
-          </button>
-        )}
+        <button
+          type="button"
+          className="auth-modal-close"
+          onClick={closeLoginModal}
+          aria-label="Close login modal"
+        >
+          <X size={18} />
+        </button>
 
         <div className="auth-modal-header">
           <div className="auth-modal-brand-badge">
