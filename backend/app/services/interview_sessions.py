@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app import config
 from app.services.framework import skill_map
-from app.services.gemini import generate_json
+from app.services.gemini import create_gemini_client, generate_json
 from app.services.packets import ATTRIBUTION_WARNINGS, MEDIUM_CAPS, _cap_reason, attribution_details
 from app.services.verifier import EARLIER_SOURCE_KINDS, line_share, snippet_sha256
 
@@ -614,7 +614,7 @@ def generate_questions(
         raise InterviewGenerationError("Interview generation needs Gemini, which is not configured on this server.")
     anchors = {target["target_id"]: target for target in targets}
     prompt = build_prompt(targets, role_name, previous)
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    client = create_gemini_client(config.GEMINI_API_KEY)
     contents = prompt
     fallback: tuple[list[ProposedQuestion], list[dict[str, Any]]] | None = None
     for attempt in range(2):

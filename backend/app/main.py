@@ -43,6 +43,7 @@ from app.config import (
 )
 from app.routes.debug import router as debug_router
 from app.services.badge import create_badge
+from app.services.demo_seed import seed_demo_passports
 from app.services.framework import get_roles, get_skills
 from app.services.gist_ingest import MAX_GIST_URL_LENGTH, parse_gist_url
 from app.services.github_ingest import validate_github_username
@@ -87,6 +88,7 @@ from app.services.storage import (
     get_passport_owner_token_hash,
     get_recruiter_session,
     get_review_requests_by_passports,
+    is_trusted_demo_passport,
     list_interview_outcomes,
     list_interview_sessions,
     list_passports_page,
@@ -263,11 +265,11 @@ def startup() -> None:
         missing = [
             name for name, value in (
                 ("GITHUB_TOKEN", config.GITHUB_TOKEN),
-                ("GEMINI_API_KEY", config.GEMINI_API_KEY),
             ) if not value
         ]
         if missing:
             raise RuntimeError(f"Missing required production setting(s): {', '.join(missing)}.")
+    seed_demo_passports()
     reconcile_interrupted_jobs()
     prune_old_jobs()
     prune_old_rate_limits()
@@ -562,7 +564,7 @@ def health() -> dict[str, str]:
 @app.get("/ready")
 def readiness() -> dict[str, str]:
     try:
-        if config.APP_ENV != "development" and not (config.GITHUB_TOKEN and config.GEMINI_API_KEY):
+        if config.APP_ENV != "development" and not config.GITHUB_TOKEN:
             raise RuntimeError("Required integration configuration is missing.")
         check_storage_ready()
     except Exception as exc:
@@ -696,7 +698,6 @@ async def create_passport(
     resume: UploadFile = File(...),
     target_role: str = Form(...),
     certificates: list[UploadFile] | None = File(default=None),
-    is_demo: bool = Form(default=False),
     ownership_challenge_id: str | None = Form(default=None),
     reports: list[UploadFile] | None = File(default=None),
     portfolio_url: str | None = Form(default=None),
@@ -816,8 +817,7 @@ async def create_passport(
         fail_job(job_id, f"Upload rejected: {exc}")
         raise
 
-    # Demo passports are labelled DEMO DATA and skip the proof.
-    if config.REQUIRE_OWNERSHIP_PROOF and not is_demo:
+    if config.REQUIRE_OWNERSHIP_PROOF:
         try:
             # Calls GitHub, so it runs off the event loop. The proof is bound to this job's passport.
             await run_in_threadpool(verify_challenge, ownership_challenge_id, github_username, job_id)
@@ -836,7 +836,7 @@ async def create_passport(
         role,
         resume_bytes,
         cert_bytes,
-        is_demo,
+        False,
         report_files=report_files,
         portfolio_url=portfolio_url,
         codeforces_handle=codeforces_handle,
@@ -923,14 +923,32 @@ def passport(passport_id: str, background_tasks: BackgroundTasks) -> dict:
     return student_view(_stored_passport(passport_id, background_tasks), list_review_requests(passport_id))
 
 
-@app.get("/passport/{passport_id}/review", dependencies=[Depends(require_recruiter)])
-def review_passport(passport_id: str, background_tasks: BackgroundTasks) -> dict:
-    return review_view(_stored_passport(passport_id, background_tasks))
+def _require_demo_passport_access(passport: dict[str, Any], recruiter_id: str) -> None:
+    if recruiter_id == config.DEMO_RECRUITER_ID and not is_trusted_demo_passport(passport["id"]):
+        raise HTTPException(status_code=404, detail="Passport not found.")
 
 
-@app.get("/passports", dependencies=[Depends(require_recruiter)])
-def passports(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)) -> dict:
-    items, total = list_passports_page(limit, offset)
+@app.get("/passport/{passport_id}/review")
+def review_passport(
+    passport_id: str,
+    background_tasks: BackgroundTasks,
+    recruiter_id: str = Depends(require_recruiter),
+) -> dict:
+    stored = _stored_passport(passport_id, background_tasks, queue_backfill=False)
+    _require_demo_passport_access(stored, recruiter_id)
+    if recruiter_id != config.DEMO_RECRUITER_ID:
+        _maybe_queue_depth_backfill(stored, background_tasks)
+    return review_view(stored)
+
+
+@app.get("/passports")
+def passports(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    recruiter_id: str = Depends(require_recruiter),
+) -> dict:
+    demo_only = recruiter_id == config.DEMO_RECRUITER_ID
+    items, total = list_passports_page(limit, offset, demo_only=demo_only)
     all_requests = get_review_requests_by_passports([item["id"] for item in items])
     return {
         "items": [student_view(item, all_requests.get(item["id"], [])) for item in items],
@@ -940,9 +958,14 @@ def passports(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
     }
 
 
-@app.get("/passports/review", dependencies=[Depends(require_recruiter)])
-def review_passports(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)) -> dict:
-    items, total = list_latest_passports_page(limit, offset)
+@app.get("/passports/review")
+def review_passports(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    recruiter_id: str = Depends(require_recruiter),
+) -> dict:
+    demo_only = recruiter_id == config.DEMO_RECRUITER_ID
+    items, total = list_latest_passports_page(limit, offset, demo_only=demo_only)
     all_requests = get_review_requests_by_passports([item["id"] for item in items])
     outcomes = list_interview_outcomes([item["id"] for item in items])
     items = [apply_interview_levels(item, outcomes.get(item["id"], [])) for item in items]
@@ -1140,6 +1163,7 @@ def interview_sessions(passport_id: str, recruiter_id: str = Depends(require_rec
     passport = get_passport(passport_id)
     if not passport:
         raise HTTPException(status_code=404, detail="Passport not found.")
+    _require_demo_passport_access(passport, recruiter_id)
     return {"items": [session_view(item, passport) for item in list_interview_sessions(passport_id, recruiter_id)]}
 
 

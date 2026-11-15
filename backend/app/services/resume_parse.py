@@ -155,7 +155,13 @@ def find_skill_mentions(text: str) -> list[dict[str, Any]]:
 
 
 def match_resume_skills(text: str) -> list[dict[str, str]]:
-    return [{"skill_id": item["skill_id"], "mention": item["name"]} for item in find_skill_mentions(text)]
+    return [
+        {
+            "skill_id": item["skill_id"],
+            "mention": item["line"][item["span"][0]:item["span"][1]],
+        }
+        for item in find_skill_mentions(text)
+    ]
 
 
 def parse_resume(pdf_bytes: bytes) -> dict[str, Any]:

@@ -31,6 +31,14 @@ test("clicking the recruiter demo fills both fields and leaves sign-in to the us
       );
     });
 
+    const credentials = renderer!.root.findByProps({ "aria-label": "Recruiter Demo Credentials" });
+    const visibleCredentials = credentials.findAll((node) => typeof node.type === "string")
+      .map((node) => node.children.join(""))
+      .join(" ");
+    assert.match(visibleCredentials, /recruiter@techcorp\.com/);
+    assert.match(visibleCredentials, /recruiter2026/);
+    assert.match(visibleCredentials, /Read-only recruiter preview/);
+
     await act(async () => {
       renderer!.root.findByProps({ id: "demo-fill-recruiter" }).props.onClick();
     });

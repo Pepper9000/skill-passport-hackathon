@@ -164,6 +164,12 @@ export type PassportSkill = {
   certified: boolean;
   evidence: Evidence[];
   resume_mention?: string | null;
+  source_evidence?: {
+    source: "resume" | "certificate";
+    mention: string;
+    confidence: number;
+    verification_status: "pending";
+  }[];
   /** Review endpoints, when interview outcomes moved the level: the level from the code checks. */
   evidence_level?: string;
   interview?: InterviewAdjustment;
@@ -224,6 +230,10 @@ export type Passport = {
   updated_at?: string;
   generation_warning?: string | null;
   generation_error?: string | null;
+  generation?: {
+    method: "ai_assisted" | "evidence_fallback" | "recheck_without_document_mentions";
+    proposal_warning?: string | null;
+  };
   /** Labels for the evidence checks, from the backend. */
   check_labels?: Record<string, string>;
   /** Review endpoints only. */

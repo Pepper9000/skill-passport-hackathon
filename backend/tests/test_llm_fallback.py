@@ -36,6 +36,19 @@ def client_with(models):
     return type("C", (), {"models": models})()
 
 
+def test_gemini_client_has_a_bounded_request_timeout(monkeypatch):
+    captured = {}
+    client = object()
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return client
+
+    monkeypatch.setattr(gemini.genai, "Client", create)
+    assert gemini.create_gemini_client("test-key") is client
+    assert captured["http_options"].timeout == gemini.GENERATION_REQUEST_TIMEOUT_MS
+
+
 def test_gemini_success_never_calls_deepseek(monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "x")
     monkeypatch.setattr(gemini, "_deepseek_request",
@@ -224,7 +237,7 @@ def test_fallback_answer_not_cached(monkeypatch, tmp_path):
     monkeypatch.setattr(gemini, "_deepseek_request", lambda contents: '{"reqs": ["x"]}')
     quota = errors.ClientError(429, {"error": {"message": "quota"}})
     monkeypatch.setattr(gemini.genai, "Client",
-                        lambda api_key: client_with(FakeModels(error=quota)))
+                        lambda api_key, **_kwargs: client_with(FakeModels(error=quota)))
     items = gemini.propose_json_items("prompt", "reqs", "jd")
     assert items == ["x"]
     assert list(tmp_path.glob("jd-*.json")) == []

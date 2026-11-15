@@ -55,6 +55,13 @@ def initialize_storage() -> None:
         )
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS trusted_demo_passports (
+                passport_id TEXT PRIMARY KEY
+            )
+            """
+        )
+        connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
@@ -341,6 +348,44 @@ def _save_passport(connection: sqlite3.Connection, passport: dict[str, Any]) -> 
     )
 
 
+def save_trusted_demo_passport(passport: dict[str, Any]) -> None:
+    """Persist a curated demo passport and register it as trusted server-side sample data.
+
+    This function is for backend-controlled seeding only; request handlers must use the regular
+    save functions and must never register a passport as trusted demo data.
+    """
+    initialize_storage()
+    if not passport.get("id"):
+        raise ValueError("A trusted demo passport must have an id.")
+    trusted_passport = {**passport, "is_demo": True}
+    with _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE;")
+        existing = connection.execute(
+            "SELECT 1 FROM passports WHERE id = ?", (trusted_passport["id"],)
+        ).fetchone()
+        if existing:
+            trusted = connection.execute(
+                "SELECT 1 FROM trusted_demo_passports WHERE passport_id = ?",
+                (trusted_passport["id"],),
+            ).fetchone()
+            if trusted:
+                return
+            raise ValueError(
+                f"Refusing to trust an existing non-demo passport: {trusted_passport['id']}."
+            )
+        _save_passport(connection, trusted_passport)
+        connection.execute(
+            "INSERT INTO trusted_demo_passports (passport_id) VALUES (?)",
+            (trusted_passport["id"],),
+        )
+
+
+def _deserialize_passport(payload: str, is_demo: bool) -> dict[str, Any]:
+    passport = json.loads(payload)
+    passport["is_demo"] = is_demo
+    return passport
+
+
 def save_passport_and_complete_job(
     passport: dict[str, Any], job_id: str, completed_steps: list[str]
 ) -> None:
@@ -379,38 +424,79 @@ def get_passport(passport_id: str) -> dict[str, Any] | None:
     initialize_storage()
     with _connect() as connection:
         row = connection.execute(
-            "SELECT payload FROM passports WHERE id = ?", (passport_id,)
+            """
+            SELECT payload, EXISTS(
+                SELECT 1 FROM trusted_demo_passports WHERE passport_id = passports.id
+            ) AS is_demo
+            FROM passports WHERE id = ?
+            """,
+            (passport_id,),
         ).fetchone()
-    return json.loads(row["payload"]) if row else None
+    return _deserialize_passport(row["payload"], bool(row["is_demo"])) if row else None
+
+
+def is_trusted_demo_passport(passport_id: str) -> bool:
+    initialize_storage()
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT 1 FROM trusted_demo_passports WHERE passport_id = ?", (passport_id,)
+        ).fetchone()
+    return row is not None
 
 
 def list_passports() -> list[dict[str, Any]]:
     initialize_storage()
     with _connect() as connection:
         rows = connection.execute(
-            "SELECT payload FROM passports ORDER BY created_at DESC, id"
+            """
+            SELECT payload, EXISTS(
+                SELECT 1 FROM trusted_demo_passports WHERE passport_id = passports.id
+            ) AS is_demo
+            FROM passports ORDER BY created_at DESC, id
+            """
         ).fetchall()
-    return [json.loads(row["payload"]) for row in rows]
+    return [_deserialize_passport(row["payload"], bool(row["is_demo"])) for row in rows]
 
 
-def list_passports_page(limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
+def list_passports_page(
+    limit: int, offset: int, *, demo_only: bool = False
+) -> tuple[list[dict[str, Any]], int]:
     """Return a bounded, newest-first page and the total count."""
     initialize_storage()
     with _connect() as connection:
+        where = (
+            "WHERE EXISTS (SELECT 1 FROM trusted_demo_passports "
+            "WHERE passport_id = passports.id)"
+            if demo_only else ""
+        )
         rows = connection.execute(
-            "SELECT payload FROM passports ORDER BY created_at DESC, id LIMIT ? OFFSET ?",
+            f"""
+            SELECT payload, EXISTS(
+                SELECT 1 FROM trusted_demo_passports WHERE passport_id = passports.id
+            ) AS is_demo
+            FROM passports {where} ORDER BY created_at DESC, id LIMIT ? OFFSET ?
+            """,
             (limit, offset),
         ).fetchall()
-        total = connection.execute("SELECT COUNT(*) AS count FROM passports").fetchone()["count"]
-    return [json.loads(row["payload"]) for row in rows], total
+        total = connection.execute(
+            f"SELECT COUNT(*) AS count FROM passports {where}"
+        ).fetchone()["count"]
+    return [_deserialize_passport(row["payload"], bool(row["is_demo"])) for row in rows], total
 
 
-def list_latest_passports_page(limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
+def list_latest_passports_page(
+    limit: int, offset: int, *, demo_only: bool = False
+) -> tuple[list[dict[str, Any]], int]:
     """Return the newest-created passport per student before applying pagination."""
     initialize_storage()
     with _connect() as connection:
+        where = (
+            "WHERE EXISTS (SELECT 1 FROM trusted_demo_passports "
+            "WHERE passport_id = passports.id)"
+            if demo_only else ""
+        )
         rows = connection.execute(
-            """
+            f"""
             WITH ranked AS (
                 SELECT id, created_at,
                        ROW_NUMBER() OVER (
@@ -418,8 +504,11 @@ def list_latest_passports_page(limit: int, offset: int) -> tuple[list[dict[str, 
                            ORDER BY created_at DESC, id
                        ) AS student_rank
                 FROM passports
+                {where}
             )
-            SELECT passports.payload
+            SELECT passports.payload, EXISTS(
+                SELECT 1 FROM trusted_demo_passports WHERE passport_id = passports.id
+            ) AS is_demo
             FROM passports
             JOIN ranked ON ranked.id = passports.id
             WHERE ranked.student_rank = 1
@@ -428,10 +517,12 @@ def list_latest_passports_page(limit: int, offset: int) -> tuple[list[dict[str, 
             """,
             (limit, offset),
         ).fetchall()
-        total = connection.execute(
-            "SELECT COUNT(DISTINCT lower(github_username)) AS count FROM passports"
-        ).fetchone()["count"]
-    return [json.loads(row["payload"]) for row in rows], total
+        total = connection.execute(f"""
+            SELECT COUNT(DISTINCT lower(github_username)) AS count
+            FROM passports
+            {where}
+        """).fetchone()["count"]
+    return [_deserialize_passport(row["payload"], bool(row["is_demo"])) for row in rows], total
 
 
 def save_custom_role(role: dict[str, Any]) -> None:

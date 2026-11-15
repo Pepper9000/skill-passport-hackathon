@@ -191,6 +191,12 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
       {changes.length > 0 && (
         <div className="upgrade-banner"><Sparkles size={18} /><div><strong>Evidence updated after re-check</strong><p>{changes.map((change) => `${skillName(change.skill_id)}: ${change.from} → ${change.to}`).join(" · ")}</p></div></div>
       )}
+      {passport.generation?.method === "evidence_fallback" && (
+        <div className="notice" role="status">
+          <strong>Evidence-based fallback</strong>
+          <p>{passport.generation.proposal_warning || "AI code proposals were unavailable."} Document mentions remain Unverified unless repository checks find supporting evidence.</p>
+        </div>
+      )}
       <details className="ladder-legend">
         <summary>What do the evidence levels mean?</summary>
         <div className="legend-items">{ladder.map(([level, text]) => (

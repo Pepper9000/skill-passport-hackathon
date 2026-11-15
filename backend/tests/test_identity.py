@@ -302,16 +302,27 @@ def test_unexpected_ownership_check_failure_releases_the_job(monkeypatch) -> Non
     assert not storage.has_active_job_for_target("janedoe")
 
 
-def test_demo_passports_skip_the_ownership_proof(monkeypatch) -> None:
+def test_client_demo_flag_does_not_skip_ownership_proof_or_mark_passport_demo(monkeypatch) -> None:
     monkeypatch.setattr(config, "REQUIRE_OWNERSHIP_PROOF", True)
-    monkeypatch.setattr(main_module, "run_passport_job", lambda *args, **kwargs: None)
+    started = []
+    monkeypatch.setattr(main_module, "run_passport_job", lambda *args, **kwargs: started.append(args))
     challenge = create_challenge("janedoe")
-    response = _create(TestClient(main_module.app), is_demo="true", ownership_challenge_id=challenge["challenge_id"])
+    client = TestClient(main_module.app)
+    denied = _create(client, is_demo="true")
+    assert denied.status_code == 403
+    assert started == []
+
+    serve_gists(monkeypatch, [gist(challenge["code"], "janedoe")])
+    response = _create(
+        client,
+        is_demo="true",
+        ownership_challenge_id=challenge["challenge_id"],
+    )
     assert response.status_code == 202
     job_id = response.json()["job_id"]
-    # A demo passport neither consumes the code nor shows ownership as verified.
-    assert ownership_for_passport(job_id) is None
-    assert ownership_signal(job_id, "janedoe", is_demo=True)["status"] == "unknown"
+    assert started[0][5] is False
+    assert ownership_for_passport(job_id) is not None
+    assert ownership_signal(job_id, "janedoe", is_demo=False)["status"] == "ok"
 
 
 def test_passport_created_with_proof_disabled_does_not_show_ownership_verified(monkeypatch) -> None:
@@ -411,10 +422,17 @@ def test_production_starts_with_the_ownership_proof_on(startup_settings) -> None
         assert client.get("/health").status_code == 200
 
 
-def test_production_startup_requires_external_api_credentials(startup_settings, monkeypatch) -> None:
+def test_production_startup_allows_missing_gemini_key_with_fallback(startup_settings, monkeypatch) -> None:
     startup_settings("production", require_proof=True)
     monkeypatch.setattr(config, "GEMINI_API_KEY", "")
-    with pytest.raises(RuntimeError, match="Missing required production setting.*GEMINI_API_KEY"):
+    with TestClient(main_module.app) as client:
+        assert client.get("/health").status_code == 200
+
+
+def test_production_startup_still_requires_github_token(startup_settings, monkeypatch) -> None:
+    startup_settings("production", require_proof=True)
+    monkeypatch.setattr(config, "GITHUB_TOKEN", "")
+    with pytest.raises(RuntimeError, match="Missing required production setting.*GITHUB_TOKEN"):
         with TestClient(main_module.app):
             pass
 

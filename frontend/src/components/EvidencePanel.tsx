@@ -41,6 +41,16 @@ export default function EvidencePanel({ skill, audience, labels }: {
         <SkillLevel skill={skill} />
       </div>
       {skill.certified && <span className="certified-tag">Certificate mention · does not raise the level</span>}
+      {skill.source_evidence?.length ? (
+        <div className="fallback-source-list">
+          <strong>Document claims · pending repository verification</strong>
+          {skill.source_evidence.map((source, index) => (
+            <p key={`${source.source}-${index}`}>
+              {source.source === "resume" ? "Resume" : "Certificate"} mention: “{source.mention}” · low confidence
+            </p>
+          ))}
+        </div>
+      ) : null}
       {skill.evidence.length === 0 ? (
         <div className="empty-evidence">No evidence for this skill was found in the analysed files.</div>
       ) : (

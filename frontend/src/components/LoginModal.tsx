@@ -131,6 +131,17 @@ export default function LoginModal() {
           </p>
         </div>
 
+        <section className="auth-demo-credentials" aria-label="Recruiter Demo Credentials">
+          <div className="auth-demo-credentials-heading">
+            <h3>Recruiter Demo Credentials</h3>
+            <span>{DEMO_PROFILES.recruiter.badge}</span>
+          </div>
+          <dl>
+            <div><dt>Username</dt><dd>{DEMO_PROFILES.recruiter.user.email}</dd></div>
+            <div><dt>Password</dt><dd>{DEMO_PROFILES.recruiter.passwordHint}</dd></div>
+          </dl>
+        </section>
+
         {errorMessage && (
           <div className="notice notice-error auth-modal-alert" role="alert">
             {errorMessage}

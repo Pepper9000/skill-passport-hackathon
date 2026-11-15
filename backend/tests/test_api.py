@@ -20,6 +20,7 @@ from app.services.jobs import complete_job
 def disable_legacy_depth_backfills(monkeypatch):
     monkeypatch.setattr(main_module.config, "ENABLE_SQL_DEPTH", False)
     monkeypatch.setattr(main_module.config, "ENABLE_SKILL_DEPTH", False)
+    monkeypatch.setattr(main_module.config, "REQUIRE_OWNERSHIP_PROOF", False)
 
 
 def fake_passport(passport_id: str) -> dict:
@@ -108,7 +109,7 @@ def test_create_job_persist_and_get_passport(tmp_path, monkeypatch) -> None:
     assert "access_token_hash" not in job_response.json()
     passport = client.get(f"/passport/{job_id}")
     assert passport.status_code == 200
-    assert passport.json()["is_demo"] is True
+    assert passport.json()["is_demo"] is False
     assert client.get("/passports").json()["items"][0]["id"] == job_id
 
 
@@ -619,9 +620,10 @@ def test_production_demo_recruiter_can_read_but_not_write(tmp_path, monkeypatch)
     monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
     monkeypatch.setattr(main_module, "RECRUITER_KEY", "")
     monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_USERNAME", "recruiter@techcorp.com")
     monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", secret)
     passport = passport_with_fraud_signals("demo-readonly")
-    storage.save_passport(passport)
+    storage.save_trusted_demo_passport(passport)
 
     client = TestClient(main_module.app)
     login = client.post(
@@ -662,6 +664,72 @@ def test_production_demo_recruiter_can_read_but_not_write(tmp_path, monkeypatch)
         "/auth/recruiter/login",
         json={"username": "recruiter@techcorp.com", "key": "wrong"},
     ).status_code == 401
+
+
+def test_demo_recruiter_only_sees_demo_passports(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "demo-scope.sqlite")
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_KEY", "")
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_USERNAME", "recruiter@techcorp.com")
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", "recruiter2026")
+    demo = passport_with_fraud_signals("demo-visible")
+    private = {**passport_with_fraud_signals("private-hidden"), "is_demo": True}
+    storage.save_trusted_demo_passport(demo)
+    storage.save_passport(private)
+    client = TestClient(main_module.app)
+    login = client.post(
+        "/auth/recruiter/login",
+        json={"username": "recruiter@techcorp.com", "key": "recruiter2026"},
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+
+    assert client.get("/passports", headers=headers).json()["items"][0]["id"] == "demo-visible"
+    assert client.get("/passports/review", headers=headers).json()["items"][0]["id"] == "demo-visible"
+    assert client.get("/passport/private-hidden/review", headers=headers).status_code == 404
+    assert client.get("/passport/demo-visible/review", headers=headers).status_code == 200
+    assert client.get("/passport/private-hidden").json()["is_demo"] is False
+
+
+def test_submission_cannot_publish_demo_passport_using_client_flag(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "untrusted-demo.sqlite")
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_KEY", "")
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_USERNAME", "recruiter@techcorp.com")
+    monkeypatch.setattr(main_module.config, "DEMO_RECRUITER_PASSWORD", "recruiter2026")
+
+    def fake_runner(job_id, username, role, resume, certificates, is_demo, **kwargs):
+        passport = fake_passport(job_id)
+        passport["github_username"] = username
+        passport["is_demo"] = is_demo
+        storage.save_passport(passport)
+        complete_job(job_id, passport["id"])
+
+    monkeypatch.setattr(main_module, "run_passport_job", fake_runner)
+    client = TestClient(main_module.app)
+    created = client.post(
+        "/passport/create",
+        data={
+            "github_username": "student",
+            "target_role": "backend-intern",
+            "is_demo": "true",
+        },
+        files={"resume": ("resume.pdf", b"%PDF-1.4 sample", "application/pdf")},
+    )
+    assert created.status_code == 202
+    passport_id = created.json()["job_id"]
+    assert client.get(f"/passport/{passport_id}").json()["is_demo"] is False
+
+    login = client.post(
+        "/auth/recruiter/login",
+        json={"username": "recruiter@techcorp.com", "key": "recruiter2026"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+    assert client.get("/passports/review", headers=headers).json()["items"] == []
+    assert client.get(f"/passport/{passport_id}/review", headers=headers).status_code == 404
+    assert client.post(f"/passport/{passport_id}/recheck", headers=headers).status_code == 403
 
 
 def test_frontend_origins_normalize_exact_vercel_origins_and_reject_wildcards() -> None:

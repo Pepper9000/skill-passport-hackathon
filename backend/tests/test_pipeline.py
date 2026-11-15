@@ -24,7 +24,7 @@ def test_public_job_errors_are_specific_without_exposing_details(monkeypatch) ->
 
     monkeypatch.setattr(pipeline, "get_job", lambda _job_id: {"step": "Proposing skills"})
     gemini_network = pipeline._public_job_error("job", httpx.ConnectError("private connection detail"))
-    assert "Skill suggestions" in gemini_network
+    assert "AI skill suggestions" in gemini_network
     assert "reading GitHub" not in gemini_network
     assert "private connection detail" not in gemini_network
 
@@ -194,6 +194,110 @@ def test_recheck_preserves_legacy_resume_and_certificate_claims(monkeypatch) -> 
     assert captured["resume_skill_mentions"] == [{"skill_id": "python", "mention": "Python"}]
     assert captured["certificate_skill_mentions"] == [{"skill_id": "aws", "mention": "AWS"}]
     assert captured["gist_urls"] == ["https://gist.github.com/student/abc1234"]
+
+
+def test_recheck_keeps_prior_skills_when_document_mentions_are_unavailable(monkeypatch) -> None:
+    existing = {
+        "id": "saved-passport",
+        "created_at": "created",
+        "github_username": "student",
+        "skills": [{"skill_id": "python", "name": "Python", "level": "Applied", "evidence": [{"type": "code"}]}],
+        "sources": {"resume": True, "certificates": 0},
+        "role_match": {"role_id": "backend-intern"},
+    }
+    _stub_pipeline(monkeypatch, existing, [])
+    result = pipeline.build_passport(
+        github_username="student",
+        target_role="backend-intern",
+        resume_bytes=b"",
+        passport_id="saved-passport",
+        resume_skill_mentions=[],
+    )
+
+    assert result["generation"]["method"] == "recheck_without_document_mentions"
+    assert result["skills"] == [{
+        "skill_id": "python",
+        "name": "Python",
+        "level": "Claimed",
+        "certified": False,
+        "evidence": [],
+    }]
+
+
+def test_provider_failure_saves_pending_document_evidence_without_verifying_it(monkeypatch) -> None:
+    from app.services.claim_proposer import ClaimProposalError
+
+    saved = []
+    monkeypatch.setattr(pipeline, "ingest_github", lambda *_a, **_kw: {
+        "username": "student", "repo_count": 0, "repos": [],
+    })
+    monkeypatch.setattr(
+        pipeline,
+        "propose_claims",
+        lambda *_: (_ for _ in ()).throw(ClaimProposalError("provider unavailable")),
+    )
+    monkeypatch.setattr(pipeline, "add_copy_signals", lambda *_a, **_kw: None)
+    monkeypatch.setattr(pipeline, "build_coverage", lambda *_: {})
+    monkeypatch.setattr(pipeline, "match_role", lambda *_: {"role_id": "backend-intern", "role_name": "Backend Intern"})
+    monkeypatch.setattr(pipeline, "generate_growth_and_kit", lambda *_: {
+        "growth_tasks": [], "interview_kit": [],
+    })
+    monkeypatch.setattr(pipeline, "save_passport", saved.append)
+    monkeypatch.setattr(pipeline.config, "ENABLE_SQL_DEPTH", False)
+    monkeypatch.setattr(pipeline.config, "ENABLE_SKILL_DEPTH", False)
+
+    passport = pipeline.build_passport(
+        github_username="student",
+        target_role="backend-intern",
+        resume_bytes=b"",
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}],
+        certificate_skill_mentions=[{"skill_id": "python", "mention": "Python certificate"}],
+        is_demo=True,
+    )
+
+    assert passport["generation"]["method"] == "evidence_fallback"
+    python = next(skill for skill in passport["skills"] if skill["skill_id"] == "python")
+    assert python["level"] == "Claimed"
+    assert python["evidence"] == []
+    assert python["source_evidence"] == [
+        {
+            "source": "resume",
+            "mention": "Python",
+            "confidence": 0.35,
+            "verification_status": "pending",
+        },
+        {
+            "source": "certificate",
+            "mention": "Python certificate",
+            "confidence": 0.35,
+            "verification_status": "pending",
+        },
+    ]
+    assert saved == [passport]
+
+
+def test_unusable_ai_without_document_skills_fails_instead_of_saving_empty_passport(monkeypatch) -> None:
+    import pytest
+
+    from app.services.claim_proposer import NoUsableFallbackEvidenceError
+
+    saved = []
+    monkeypatch.setattr(pipeline, "ingest_github", lambda *_a, **_kw: {
+        "username": "student", "repo_count": 0, "repos": [],
+    })
+    monkeypatch.setattr(pipeline, "propose_claims", lambda *_: [])
+    monkeypatch.setattr(pipeline, "save_passport", saved.append)
+
+    with pytest.raises(NoUsableFallbackEvidenceError):
+        pipeline.build_passport(
+            github_username="student",
+            target_role="backend-intern",
+            resume_bytes=b"",
+            resume_skill_mentions=[],
+            certificate_skill_mentions=[],
+        )
+
+    assert saved == []
 
 
 def _stub_pipeline(monkeypatch, existing, new_skills, growth=None):
@@ -473,28 +577,36 @@ def _stub_codeforces(monkeypatch, payload=None, error=None):
 
 
 def test_passport_stores_codeforces_as_separate_axis(monkeypatch) -> None:
-    saved = _stub_pipeline(monkeypatch, None, [])
+    saved = _stub_pipeline(monkeypatch, None, [
+        {"skill_id": "python", "name": "Python", "level": "Claimed", "evidence": []},
+    ])
     _stub_codeforces(monkeypatch)
     result = pipeline.build_passport(
         github_username="student", target_role="backend-intern", resume_bytes=b"",
-        resume_skill_mentions=[], codeforces_handle="tourist",
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}],
+        codeforces_handle="tourist",
     )
     assert result["codeforces_handle"] == "tourist"
     competitive = result["competitive_programming"]
     assert competitive["ownership"] == "unverified"
     assert competitive["solved_count"] == 340
     # Separate axis: no skill gains a level or evidence from Codeforces data.
-    assert result["skills"] == []
+    python = next(skill for skill in result["skills"] if skill["skill_id"] == "python")
+    assert python["level"] == "Claimed" and python["evidence"] == []
+    assert python["source_evidence"][0]["source"] == "resume"
 
 
 def test_passport_without_handle_has_no_codeforces_section(monkeypatch) -> None:
-    _stub_pipeline(monkeypatch, None, [])
+    _stub_pipeline(monkeypatch, None, [
+        {"skill_id": "python", "name": "Python", "level": "Claimed", "evidence": []},
+    ])
     result = pipeline.build_passport(
         github_username="student", target_role="backend-intern", resume_bytes=b"",
-        resume_skill_mentions=[],
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}],
     )
     assert result["codeforces_handle"] is None
     assert result["competitive_programming"] is None
+    assert next(skill for skill in result["skills"] if skill["skill_id"] == "python")["level"] == "Claimed"
 
 
 def test_recheck_reuses_and_refreshes_stored_handle(monkeypatch) -> None:
@@ -519,11 +631,14 @@ def test_recheck_reuses_and_refreshes_stored_handle(monkeypatch) -> None:
 def test_unknown_codeforces_handle_is_recorded_not_fatal(monkeypatch) -> None:
     from app.services.codeforces_ingest import CodeforcesUserNotFoundError
 
-    _stub_pipeline(monkeypatch, None, [])
+    _stub_pipeline(monkeypatch, None, [
+        {"skill_id": "python", "name": "Python", "level": "Claimed", "evidence": []},
+    ])
     _stub_codeforces(monkeypatch, error=CodeforcesUserNotFoundError("nope"))
     result = pipeline.build_passport(
         github_username="student", target_role="backend-intern", resume_bytes=b"",
-        resume_skill_mentions=[], codeforces_handle="no-such-user",
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}],
+        codeforces_handle="no-such-user",
     )
     assert result["competitive_programming"]["error"] == "not_found"
     assert result["competitive_programming"]["ownership"] == "unverified"

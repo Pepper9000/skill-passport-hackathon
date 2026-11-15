@@ -20,7 +20,7 @@ def _fake_gemini(monkeypatch, module, responses: list[str]) -> list[str]:
     sent: list[str] = []
     replies = iter(responses)
     monkeypatch.setattr(module, "GEMINI_API_KEY", "test-key")
-    monkeypatch.setattr(module.genai, "Client", lambda api_key: object())
+    monkeypatch.setattr(module, "create_gemini_client", lambda api_key: object())
 
     def generate(client, contents, prefer="gemini"):
         from app.services.gemini import GenerationResult
@@ -29,6 +29,40 @@ def _fake_gemini(monkeypatch, module, responses: list[str]) -> list[str]:
 
     monkeypatch.setattr(module, "generate_json_result", generate)
     return sent
+
+
+def test_evidence_fallback_deduplicates_and_preserves_document_provenance() -> None:
+    fallback = claim_proposer.evidence_fallback(
+        [
+            {"skill_id": "python", "mention": "Python"},
+            {"skill_id": "python", "mention": "Python"},
+            {"skill_id": "unknown", "mention": "Unknown"},
+        ],
+        [{"skill_id": "python", "mention": "Python 3"}],
+    )
+
+    assert list(fallback) == ["python"]
+    assert fallback["python"] == [
+        {
+            "source": "resume",
+            "mention": "Python",
+            "confidence": 0.35,
+            "verification_status": "pending",
+        },
+        {
+            "source": "certificate",
+            "mention": "Python 3",
+            "confidence": 0.35,
+            "verification_status": "pending",
+        },
+    ]
+
+
+def test_evidence_fallback_rejects_empty_or_unknown_document_mentions() -> None:
+    import pytest
+
+    with pytest.raises(claim_proposer.NoUsableFallbackEvidenceError):
+        claim_proposer.evidence_fallback([], [{"skill_id": "unknown", "mention": "Unknown"}])
 
 
 def test_unknown_skill_id_is_dropped_not_fatal(monkeypatch, tmp_path) -> None:

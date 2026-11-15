@@ -7,7 +7,12 @@ import httpx
 
 from app import config
 from app.config import VERIFIER_VERSION
-from app.services.claim_proposer import propose_claims
+from app.services.claim_proposer import (
+    ClaimProposalError,
+    NoUsableFallbackEvidenceError,
+    evidence_fallback,
+    propose_claims,
+)
 from app.services.codeforces_ingest import (
     CodeforcesIngestError,
     CodeforcesUserNotFoundError,
@@ -64,6 +69,11 @@ def _public_job_error(job_id: str, exc: Exception) -> str:
         return "The server couldn’t authenticate with GitHub. Please contact the site administrator."
     if isinstance(exc, GitHubIngestError):
         return "GitHub couldn’t be read right now. Check that the account is public and try again."
+    if isinstance(exc, NoUsableFallbackEvidenceError):
+        return (
+            "AI skill suggestions were unavailable and no supported skills were extracted from "
+            "the resume or certificates. Upload readable documents that name skills and try again."
+        )
     if step == "Reading GitHub" and isinstance(exc, httpx.RequestError):
         return "A connection was interrupted while reading GitHub. Check your connection and try again."
     if step == "Reading resume" and isinstance(exc, ValueError):
@@ -73,10 +83,8 @@ def _public_job_error(job_id: str, exc: Exception) -> str:
         if "no readable text" in message:
             return "We couldn’t read text in that PDF. Upload a text-based PDF instead of a scan."
         return "We couldn’t read that resume PDF. Check that it opens correctly and try again."
-    if step == "Proposing skills" and isinstance(exc, RuntimeError) and "GEMINI_API_KEY" in str(exc):
-        return "Skill suggestions are unavailable because the server’s Gemini setup is incomplete. Please contact the site administrator."
     if step == "Proposing skills":
-        return "Skill suggestions couldn’t be generated right now. Please try again in a few minutes."
+        return "AI skill suggestions were unavailable and no document-based fallback could be created. Upload a resume or certificate naming skills and try again."
     if step == "Reading resume":
         return "The resume couldn’t be processed. Check the PDF and try again."
     if step == "Reading certificates" and isinstance(exc, ValueError):
@@ -221,7 +229,24 @@ def build_passport(
     resume_skills = _redact_mentions(resume_skills)
     certificate_skills = _redact_mentions(certificate_skills)
     progress("Proposing skills")
-    claims = propose_claims(ingestion, resume_skills)
+    proposal_method = "ai_assisted"
+    fallback_sources: dict[str, list[dict[str, Any]]] = {}
+    try:
+        claims = propose_claims(ingestion, resume_skills)
+        if not claims:
+            raise ClaimProposalError("The AI proposal contained no usable code citations.")
+    except ClaimProposalError as exc:
+        logger.warning("AI skill proposal unavailable; using document evidence fallback (%s)", exc)
+        try:
+            fallback_sources = evidence_fallback(resume_skills, certificate_skills)
+            claims = []
+            proposal_method = "evidence_fallback"
+        except NoUsableFallbackEvidenceError:
+            if not existing:
+                raise
+            logger.warning("No document skill mentions available during re-check; retaining prior skills as claimed")
+            claims = []
+            proposal_method = "recheck_without_document_mentions"
     progress("Verifying evidence")
     verified = verify_claims(
         claims,
@@ -229,6 +254,11 @@ def build_passport(
         resume_skills=resume_skills,
         certificate_skills=certificate_skills,
     )
+    if fallback_sources:
+        for skill in verified["skills"]:
+            sources = fallback_sources.get(skill["skill_id"])
+            if sources:
+                skill["source_evidence"] = sources
     add_copy_signals(
         verified["skills"],
         ingestion["username"],
@@ -346,6 +376,14 @@ def build_passport(
         "certificate_skill_mentions": certificate_skills,
         "generation_warning": generation_warning,
         "generation_error": generation_error,
+        "generation": {
+            "method": proposal_method,
+            "proposal_warning": (
+                "AI code proposals were unavailable. Listed document skills remain unverified "
+                "unless separate repository checks find supporting evidence."
+                if proposal_method == "evidence_fallback" else None
+            ),
+        },
         # The rules this passport was built with; recheck_all.py --only-incomplete rebuilds older ones.
         "verifier_version": VERIFIER_VERSION,
     }

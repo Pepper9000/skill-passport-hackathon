@@ -499,6 +499,17 @@ button.req-main { display: block; width: 100%; border: 0; background: none; padd
 .auth-modal-subtitle { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0; }
 .auth-modal-alert { margin-bottom: 16px; }
 .auth-autofill-hint { display: flex; align-items: center; gap: 8px; background: var(--success-soft); border: 1px solid rgba(124, 231, 180, .3); color: var(--live); font-size: 12px; padding: 9px 13px; border-radius: 8px; margin-bottom: 16px; animation: authPulseGreen 0.4s ease-out; }
+.auth-demo-credentials { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.auth-demo-credentials-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.auth-demo-credentials-heading h3 { margin: 0; font-size: 12px; color: var(--ink); }
+.auth-demo-credentials-heading span { color: var(--warning); font: 600 9px var(--font-mono); text-transform: uppercase; }
+.auth-demo-credentials dl { margin: 9px 0 0; display: grid; gap: 6px; font-size: 12px; }
+.auth-demo-credentials dl > div { display: grid; grid-template-columns: 76px 1fr; gap: 8px; }
+.auth-demo-credentials dt { color: var(--muted); }
+.auth-demo-credentials dd { margin: 0; color: var(--ink); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.fallback-source-list { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); font-size: 12px; }
+.fallback-source-list strong { color: var(--ink); }
+.fallback-source-list p { margin: 5px 0 0; color: var(--muted); }
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
 .auth-field { display: flex; flex-direction: column; gap: 6px; transition: all 0.3s ease; }
 .auth-field label { font-size: 11px; font-weight: 600; color: var(--ink-soft); letter-spacing: 0.2px; }

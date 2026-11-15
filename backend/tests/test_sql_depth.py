@@ -656,7 +656,8 @@ def _stub_pipeline(monkeypatch, repos: list[dict], skills: list[dict]) -> None:
 
 def _build() -> dict:
     return pipeline.build_passport(
-        github_username="student", target_role="backend-intern", resume_bytes=b"%PDF", is_demo=True,
+        github_username="student", target_role="backend-intern", resume_bytes=b"",
+        resume_skill_mentions=[{"skill_id": "sql", "mention": "SQL"}], is_demo=True,
     )
 
 

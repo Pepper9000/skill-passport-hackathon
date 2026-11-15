@@ -3,11 +3,10 @@ import json
 import re
 from typing import Any
 
-from google import genai
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import CACHE_DIR, DEEPSEEK_API_KEY, GEMINI_API_KEY, GEMINI_MODEL
-from app.services.gemini import generate_json_result
+from app.services.gemini import create_gemini_client, generate_json_result
 from app.services.framework import get_skills
 from app.services.json_cache import write_json_cache
 
@@ -27,6 +26,52 @@ class ClaimProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     claims: list[ProposedClaim]
+
+
+class ClaimProposalError(RuntimeError):
+    """The AI proposal was unavailable or unusable."""
+
+
+class NoUsableFallbackEvidenceError(RuntimeError):
+    """No extracted resume or certificate skill can support a fallback claim."""
+
+
+def evidence_fallback(
+    resume_skills: list[dict[str, str]],
+    certificate_skills: list[dict[str, str]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Keep document-derived skill mentions as pending claims, never as verified evidence."""
+    allowed = {skill["id"]: skill for skill in get_skills()}
+    aliases = {
+        term.strip().casefold(): skill
+        for skill in allowed.values()
+        for term in (skill["id"], skill["name"], *skill.get("aliases", []))
+    }
+    sources: dict[str, list[dict[str, Any]]] = {}
+    for source_name, mentions in (
+        ("resume", resume_skills),
+        ("certificate", certificate_skills),
+    ):
+        for item in mentions:
+            skill = allowed.get(item.get("skill_id", "")) or aliases.get(
+                item.get("skill_id", "").strip().casefold()
+            )
+            if not skill:
+                continue
+            source = {
+                "source": source_name,
+                "mention": item.get("mention") or skill["name"],
+                "confidence": 0.35,
+                "verification_status": "pending",
+            }
+            evidence = sources.setdefault(skill["id"], [])
+            if source not in evidence:
+                evidence.append(source)
+    if not sources:
+        raise NoUsableFallbackEvidenceError(
+            "AI skill suggestions were unavailable, and no known skills were extracted from the resume or certificates."
+        )
+    return sources
 
 
 def parse_proposal(text: str) -> ClaimProposal:
@@ -133,7 +178,7 @@ def propose_claims(
     ingestion: dict[str, Any], resume_skills: list[dict[str, str]]
 ) -> list[dict[str, Any]]:
     if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not configured; claim proposals require Gemini.")
+        raise ClaimProposalError("GEMINI_API_KEY is not configured.")
     prompt = _build_prompt(ingestion, resume_skills)
     cache_key = hashlib.sha256(
         f"{GEMINI_MODEL}\0{prompt}".encode("utf-8")
@@ -147,14 +192,24 @@ def propose_claims(
         except (UnicodeDecodeError, ValueError, ValidationError):
             cache_path.unlink(missing_ok=True)
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    try:
+        client = create_gemini_client(GEMINI_API_KEY)
+    except Exception as exc:
+        raise ClaimProposalError(
+            f"AI skill proposal client could not be initialized ({exc.__class__.__name__})."
+        ) from exc
     contents = prompt
     last_error: Exception | None = None
     for attempt in range(2):
         # A malformed Gemini answer is retried on the fallback provider when configured,
         # not re-asked of the model that just failed schema validation.
         prefer = "deepseek" if attempt and DEEPSEEK_API_KEY else "gemini"
-        result = generate_json_result(client, contents, prefer=prefer)
+        try:
+            result = generate_json_result(client, contents, prefer=prefer)
+        except Exception as exc:
+            raise ClaimProposalError(
+                f"AI skill proposal failed ({exc.__class__.__name__})."
+            ) from exc
         response_text = result.text
         try:
             proposal = _lenient_proposal(response_text)
@@ -171,4 +226,6 @@ def propose_claims(
                     f"{prompt}\nYour previous output was invalid: {exc}. "
                     "Return corrected JSON only, preserving the schema and citation rules."
                 )
-    raise RuntimeError(f"The claim proposer returned invalid output after one retry: {last_error}")
+    raise ClaimProposalError(
+        f"The claim proposer returned unusable output after one retry ({last_error})."
+    )

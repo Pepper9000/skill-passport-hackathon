@@ -216,7 +216,7 @@ def test_pipeline_adds_reports_and_portfolio_after_levels_are_final(monkeypatch)
     monkeypatch.setattr(pipeline, "parse_report", lambda name, content: {**PARSED[0], "filename": name})
     passport = pipeline.build_passport(
         github_username="student-dev", target_role="backend-intern", resume_bytes=b"",
-        resume_skill_mentions=[], is_demo=True,
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}], is_demo=True,
         report_files=[("report.pdf", b"%PDF-1.4")], portfolio_url="https://student-dev.github.io",
     )
     levels = {skill["skill_id"]: skill["level"] for skill in passport["skills"]}
@@ -234,7 +234,7 @@ def test_passports_without_reports_are_unchanged(monkeypatch) -> None:
     _stub_pipeline(monkeypatch, None, passport_skills())
     passport = pipeline.build_passport(
         github_username="student-dev", target_role="backend-intern", resume_bytes=b"",
-        resume_skill_mentions=[], is_demo=True,
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}], is_demo=True,
     )
     assert "reports" not in passport and "portfolio" not in passport and "reports" not in passport["sources"]
 
@@ -244,7 +244,7 @@ def test_recheck_recomputes_report_statuses_and_keeps_the_portfolio(monkeypatch)
     monkeypatch.setattr(pipeline, "parse_report", lambda name, content: {**PARSED[0], "filename": name})
     first = pipeline.build_passport(
         github_username="student-dev", target_role="backend-intern", resume_bytes=b"",
-        resume_skill_mentions=[], is_demo=True,
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}], is_demo=True,
         report_files=[("report.pdf", b"%PDF-1.4")], portfolio_url="https://example.com/me",
     )
     # After a growth task the student now commits a Dockerfile: Docker becomes Used.
@@ -303,6 +303,7 @@ def _create(client, files=(), **data):
 def api(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "test.sqlite")
     monkeypatch.setattr(config, "ENABLE_REPORTS", True)
+    monkeypatch.setattr(config, "REQUIRE_OWNERSHIP_PROOF", False)
     received: list[dict] = []
     monkeypatch.setattr(main_module, "run_passport_job", lambda *args, **kwargs: received.append(kwargs))
     return TestClient(main_module.app), received

@@ -113,7 +113,7 @@ def test_passport_and_job_completion_are_atomic_and_keep_owner_token(tmp_path, m
 
     storage.save_passport_and_complete_job(passport, "passport-atomic", ["Done"])
 
-    assert storage.get_passport("passport-atomic") == passport
+    assert storage.get_passport("passport-atomic") == {**passport, "is_demo": False}
     assert storage.get_stored_job("passport-atomic")["status"] == "done"
     assert storage.get_passport_owner_token_hash("passport-atomic") == "owner-hash"
 
@@ -140,7 +140,7 @@ def test_depth_update_merges_fields_only_for_unchanged_passport_version(tmp_path
     latest = {**original, "updated_at": "version-2", "skills": ["new"], "level_changes": ["changed"]}
     storage.save_passport(latest)
     assert not storage.save_passport_depth("depth-merge", "version-1", "created", {"skill_depth": {"x": 1}})
-    assert storage.get_passport("depth-merge") == latest
+    assert storage.get_passport("depth-merge") == {**latest, "is_demo": False}
 
     assert storage.save_passport_depth("depth-merge", "version-2", "created", {"skill_depth": {"x": 1}})
     saved = storage.get_passport("depth-merge")

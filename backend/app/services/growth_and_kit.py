@@ -7,7 +7,7 @@ from google import genai
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import CACHE_DIR, DEEPSEEK_API_KEY, GEMINI_API_KEY, GEMINI_MODEL
-from app.services.gemini import generate_json_result
+from app.services.gemini import create_gemini_client, generate_json_result
 from app.services.framework import skill_map
 from app.services.json_cache import write_json_cache
 
@@ -202,7 +202,7 @@ def generate_growth_and_kit(
         except (ValueError, ValidationError):
             cache_path.unlink(missing_ok=True)
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = create_gemini_client(GEMINI_API_KEY)
     contents = prompt
     last_error: Exception | None = None
     for attempt in range(2):

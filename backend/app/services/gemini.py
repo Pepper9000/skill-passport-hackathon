@@ -27,6 +27,15 @@ RETRY_DELAYS_SECONDS = (3, 8, 20)
 # Dropped connections and timeouts (httpx.RemoteProtocolError, ReadTimeout, ConnectError, resets).
 NETWORK_RETRY_DELAYS_SECONDS = (3, 8)
 NETWORK_ERRORS = (httpx.TransportError, ConnectionError)
+GENERATION_REQUEST_TIMEOUT_MS = 30_000
+
+
+def create_gemini_client(api_key: str) -> genai.Client:
+    """Create an SDK client whose network requests cannot wait indefinitely."""
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=GENERATION_REQUEST_TIMEOUT_MS),
+    )
 
 
 def generate_json(client: genai.Client, contents: str, model: str | None = None,
@@ -116,7 +125,7 @@ def _deepseek_request(contents: str) -> str:
             "temperature": 0,
             "stream": False,
         },
-        timeout=60,
+        timeout=GENERATION_REQUEST_TIMEOUT_MS / 1000,
     )
     response.raise_for_status()
     data = response.json()
@@ -176,7 +185,7 @@ def propose_json_items(prompt: str, key: str, cache_prefix: str) -> list[Any]:
     for attempt in range(2):
         prefer = "deepseek" if attempt and config.DEEPSEEK_API_KEY else "gemini"
         try:
-            result = generate_json_result(genai.Client(api_key=config.GEMINI_API_KEY), contents,
+            result = generate_json_result(create_gemini_client(config.GEMINI_API_KEY), contents,
                                           model=model, prefer=prefer)
         except Exception as exc:
             raise GeminiUnavailableError(f"Generation call failed: {exc.__class__.__name__}") from exc

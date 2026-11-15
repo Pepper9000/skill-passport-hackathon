@@ -46,7 +46,6 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
   const [role, setRole] = useState("");
   const [resume, setResume] = useState<File | null>(null);
   const [certificates, setCertificates] = useState<File[]>([]);
-  const [demo, setDemo] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [challenge, setChallenge] = useState<OwnershipChallenge | null>(null);
@@ -179,7 +178,7 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
       setError(validationError);
       return;
     }
-    if (!demo && (!challenge || !sameGitHubUsername(challenge.github_username, username))) {
+    if (!challenge || !sameGitHubUsername(challenge.github_username, username)) {
       if (challenge) setChallenge(null);
       setError(PROOF_REQUIRED);
       return;
@@ -198,8 +197,7 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
     data.append("github_username", username.trim());
     data.append("resume", resume);
     data.append("target_role", targetRole);
-    data.append("is_demo", String(demo));
-    if (!demo && challenge) data.append("ownership_challenge_id", challenge.challenge_id);
+    if (challenge) data.append("ownership_challenge_id", challenge.challenge_id);
     certificates.forEach((file) => data.append("certificates", file));
     sentReports.forEach((file) => data.append("reports", file));
     if (sentPortfolio) data.append("portfolio_url", sentPortfolio);
@@ -207,7 +205,7 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
     if (gistUrl.trim()) data.append("gist_url", gistUrl.trim());
     try {
       const created = await api.createPassport(data);
-      if (!demo) setChallenge(null); // each code works once
+      setChallenge(null); // each code works once
       onJobChange({
         job_id: created.job_id,
         status: "queued",
@@ -351,27 +349,24 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
             </>
           )}
           </details>
-          <label className="demo-toggle"><input type="checkbox" checked={demo} onChange={(event) => { setDemo(event.target.checked); setError(""); }} /> Create as a demo passport (sample data)</label>
-          {!demo && (
-            <div className="notice notice-warning">
-              <strong><KeyRound size={13} /> Prove this account is yours</strong>
-              {challenge ? (
-                <>
-                  <p>While signed in to GitHub as <strong>{challenge.github_username}</strong>, create a <strong>public</strong> gist with this code as the description (any file name and content). It works once and expires in 1 hour; you can delete the gist afterwards.</p>
-                  <p><code>{challenge.code}</code></p>
-                  <button className="button button-light" type="button" onClick={copyCode}><Clipboard size={14} /> {copied ? "Copied" : "Copy"}</button>{" "}
-                  <a className="button button-light" href="https://gist.github.com" target="_blank" rel="noreferrer">Open gist.github.com <ExternalLink size={14} /></a>
-                </>
-              ) : (
-                <>
-                  <p>Confirm you control this GitHub account with a one-time code posted as a public gist.</p>
-                  <button className="button button-light" type="button" onClick={getCode} disabled={!username.trim() || gettingCode}>
-                    {gettingCode ? <LoaderCircle className="spin" size={14} /> : <KeyRound size={14} />} Get verification code
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+          <div className="notice notice-warning">
+            <strong><KeyRound size={13} /> Prove this account is yours</strong>
+            {challenge ? (
+              <>
+                <p>While signed in to GitHub as <strong>{challenge.github_username}</strong>, create a <strong>public</strong> gist with this code as the description (any file name and content). It works once and expires in 1 hour; you can delete the gist afterwards.</p>
+                <p><code>{challenge.code}</code></p>
+                <button className="button button-light" type="button" onClick={copyCode}><Clipboard size={14} /> {copied ? "Copied" : "Copy"}</button>{" "}
+                <a className="button button-light" href="https://gist.github.com" target="_blank" rel="noreferrer">Open gist.github.com <ExternalLink size={14} /></a>
+              </>
+            ) : (
+              <>
+                <p>Confirm you control this GitHub account with a one-time code posted as a public gist.</p>
+                <button className="button button-light" type="button" onClick={getCode} disabled={!username.trim() || gettingCode}>
+                  {gettingCode ? <LoaderCircle className="spin" size={14} /> : <KeyRound size={14} />} Get verification code
+                </button>
+              </>
+            )}
+          </div>
           {(error || generationError || (job?.status === "failed" ? job.error : "")) && <div className="notice notice-error" role="alert">{error || generationError || job?.error}</div>}
           <button className="button submit-button" type="submit" disabled={submitting || (usingJobDescription && !extracted) || Boolean(job && (job.status === "queued" || job.status === "running"))}>
             {submitting ? <LoaderCircle className="spin" size={17} /> : null}

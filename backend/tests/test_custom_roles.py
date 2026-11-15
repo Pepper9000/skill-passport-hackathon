@@ -256,7 +256,7 @@ def test_gemini_helper_needs_a_key_retries_invalid_json_once_and_caches(tmp_path
         gemini.propose_json_items("prompt", "requirements", "jd")
 
     monkeypatch.setattr(config, "GEMINI_API_KEY", "test-key")
-    monkeypatch.setattr(gemini.genai, "Client", lambda api_key: object())
+    monkeypatch.setattr(gemini.genai, "Client", lambda api_key, **_kwargs: object())
     answers = ["not json", '{"requirements": [{"skill_id": "python"}]}']
     monkeypatch.setattr(gemini, "generate_json_result",
                         lambda client, contents, model=None, prefer="gemini": gemini.GenerationResult(
@@ -281,6 +281,7 @@ def test_gemini_helper_needs_a_key_retries_invalid_json_once_and_caches(tmp_path
 def _client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "test.sqlite")
     monkeypatch.setattr(config, "ENABLE_CUSTOM_ROLES", True)
+    monkeypatch.setattr(config, "REQUIRE_OWNERSHIP_PROOF", False)
     return TestClient(main_module.app)
 
 
@@ -338,7 +339,7 @@ def _real_gemini_failing(tmp_path, monkeypatch, error: Exception) -> list[int]:
 
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(config, "GEMINI_API_KEY", "test-key")
-    monkeypatch.setattr(gemini.genai, "Client", lambda api_key: type("C", (), {"models": Models()})())
+    monkeypatch.setattr(gemini.genai, "Client", lambda api_key, **_kwargs: type("C", (), {"models": Models()})())
     monkeypatch.setattr(gemini.time, "sleep", lambda _seconds: None)
     return calls
 
@@ -549,7 +550,7 @@ def test_each_task_uses_its_own_model(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(config, "GEMINI_API_KEY", "test-key")
     monkeypatch.setattr(config, "GEMINI_JD_MODEL", "jd-model")
     monkeypatch.setattr(gemini, "GEMINI_MODEL", "passport-model")
-    monkeypatch.setattr(gemini.genai, "Client", lambda api_key: type("C", (), {"models": Models()})())
+    monkeypatch.setattr(gemini.genai, "Client", lambda api_key, **_kwargs: type("C", (), {"models": Models()})())
     gemini.propose_json_items("prompt", "requirements", "jd")
     gemini.generate_json(gemini.genai.Client(api_key="x"), "prompt")
     assert used == ["jd-model", "passport-model"]
@@ -569,7 +570,7 @@ def test_exact_only_results_are_never_cached(tmp_path, monkeypatch) -> None:
             calls.append(2)
             return type("R", (), {"text": '{"requirements": [{"skill_id": "python", "importance": "must", "quote": "Strong Python skills are required."}]}'})()
 
-    monkeypatch.setattr(gemini.genai, "Client", lambda api_key: type("C", (), {"models": Working()})())
+    monkeypatch.setattr(gemini.genai, "Client", lambda api_key, **_kwargs: type("C", (), {"models": Working()})())
     second = jd_parse.extract_requirements("Backend Engineering Intern", NORTHWIND)
     assert second["mode"] == "ai" and calls[-1] == 2  # Gemini was asked again, not a reused fallback
     assert len(list(tmp_path.glob("jd-*.json"))) == 1  # only the successful AI answer is cached
@@ -658,7 +659,8 @@ def test_build_passport_stores_the_custom_role_and_recheck_reuses_it(monkeypatch
     monkeypatch.setattr(pipeline, "generate_growth_and_kit", lambda *_: {"growth_tasks": [], "interview_kit": []})
     monkeypatch.setattr(pipeline, "save_passport", saved.append)
     passport = pipeline.build_passport(
-        github_username="student", target_role=role, resume_bytes=b"", resume_skill_mentions=[], is_demo=True,
+        github_username="student", target_role=role, resume_bytes=b"",
+        resume_skill_mentions=[{"skill_id": "python", "mention": "Python"}], is_demo=True,
     )
     assert passport["custom_role"] == role
     assert passport["target_role"] == "Data Intern"
@@ -825,4 +827,3 @@ def test_responsibilities_heading_and_signals(monkeypatch) -> None:
     assert table["sql"] == "must"
     # Docker is in Responsibilities AND Preferred qualifications -> nice wins (preferred outranks responsibilities)
     assert table["docker"] == "nice"
-
