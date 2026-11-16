@@ -118,11 +118,12 @@ function QuestionCard({ question, index, session, onSaved, readOnly }: {
 }
 
 /** Private recruiter interview sets: generated on request, saved, and assessed question by question. */
-export default function InterviewWorkspace({ passportId, onOutcomeSaved, readOnly = false }: {
+export default function InterviewWorkspace({ passportId, onOutcomeSaved, readOnly = false, isDemo = false }: {
   passportId: string;
   /** Called after an outcome is saved, so the page can show the levels it moved. */
   onOutcomeSaved?: () => void;
   readOnly?: boolean;
+  isDemo?: boolean;
 }) {
   const [sessions, setSessions] = useState<InterviewSession[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -236,9 +237,14 @@ export default function InterviewWorkspace({ passportId, onOutcomeSaved, readOnl
         <p className="muted">Questions are picked from the job requirements and the candidate's cited code: job-critical requirements whose attribution needs a look come first, strong evidence last. Each question is checked against the cited file and lines before it's saved.</p>
       </details>
       <p className="muted interview-note">{INTERVIEW_DISCLAIMER}</p>
+      {isDemo && !readOnly && (
+        <div className="notice notice-info">
+          <strong>Interactive demo session:</strong> Interview questions and assessments here run in an isolated temporary session and do not alter real candidates or production audit trails.
+        </div>
+      )}
       {readOnly && (
         <div className="notice notice-warning">
-          Read-only demo mode: Interview question generation and assessment scoring are disabled for this preview account. Sign in with a named recruiter secret key configured in <code>RECRUITER_ACCOUNTS</code> to generate sets and record candidate assessments.
+          Read-only demo mode: Interview question generation and assessment scoring are disabled for live candidates in demo mode. Sign in with a named recruiter secret key configured in <code>RECRUITER_ACCOUNTS</code> to generate sets and record candidate assessments.
         </div>
       )}
       {error && <div className="notice notice-error">{error.message} {!generating && !loading && error.retry && <button type="button" className="link-button" onClick={error.retry}>Try again</button>}</div>}
@@ -251,7 +257,7 @@ export default function InterviewWorkspace({ passportId, onOutcomeSaved, readOnl
       )}
       {sessions === null && <p className="muted">Loading interview sets…</p>}
       {sessions && !sessions.length && !generating && !loading && !error && (
-        <div className="empty-state">{readOnly ? "No private interview set is available for this candidate. Question generation is disabled in demo mode; sign in with a named recruiter key to generate live sets." : "No interview set yet. Generate one to get questions grounded in this candidate's cited code. Refreshing the page never generates new questions."}</div>
+        <div className="empty-state">{readOnly ? "No private interview set is available for this candidate. Question generation is disabled for live candidates in demo mode; sign in with a named recruiter key to generate live sets." : "No interview set yet. Generate one to get questions grounded in this candidate's cited code. Refreshing the page never generates new questions."}</div>
       )}
       {session?.status === "failed" && <div className="notice notice-error">{session.error ?? "Generation failed."} Generate a new set to try again.</div>}
       {session?.status === "generating" && <p className="muted">This set is still being generated…</p>}

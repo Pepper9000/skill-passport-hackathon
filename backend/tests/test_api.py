@@ -648,7 +648,9 @@ def test_production_demo_recruiter_can_read_but_not_write(tmp_path, monkeypatch)
         "/passport/demo-readonly/recheck",
         headers={**headers, "X-Passport-Token": owner_token},
     ).status_code == 403
-    assert client.post("/passport/demo-readonly/interview-sessions", headers=headers).status_code == 403
+    real_passport = fake_passport("real-readonly")
+    storage.save_passport(real_passport)
+    assert client.post("/passport/real-readonly/interview-sessions", headers=headers).status_code == 403
     assert client.put(
         "/interview-sessions/missing/questions/missing/assessment",
         headers=headers,

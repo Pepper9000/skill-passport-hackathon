@@ -16,6 +16,7 @@ Interview outcomes are human observations stored separately; nothing here reads 
 levels, role matching, depth scores or verification.
 """
 import json
+import logging
 import re
 import uuid
 from typing import Any, Literal
@@ -704,6 +705,75 @@ def _discussion_question(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+logger = logging.getLogger(__name__)
+
+
+def _pregenerated_demo_code_question(target: dict[str, Any]) -> dict[str, Any]:
+    citation = target["citation"]
+    skill_id = target.get("skill_id")
+    name = target.get("skill_name") or skill_id
+
+    if skill_id == "python":
+        question = "DEMO DATA: In demo-study-planner app/models.py lines 1–11, walk me through how the StudyItem model uses Pydantic with type annotations, and how invalid inputs are handled."
+        follow_up = "How would you handle datetime timezone conversions or add a custom field validator?"
+        answer_points = [
+            "Mentions Pydantic Field constraints (min_length=1, max_length=120) and type validation.",
+            "Explains that Pydantic raises ValidationError when constraints are violated.",
+            "Discusses datetime parsing and default values (completed: bool = False).",
+        ]
+        focus_start, focus_end = 4, 8
+    elif skill_id == "rest-api":
+        question = "DEMO DATA: In demo-study-planner app/main.py lines 1–11, how does get_study_item handle the case where an item does not exist, and what HTTP status is returned?"
+        follow_up = "How would you structure error responses to match RFC 7807 problem details?"
+        answer_points = [
+            "Cites HTTPException(status_code=404, detail='Item not found').",
+            "Explains RESTful status codes (404 Not Found vs 200 OK with empty body).",
+            "Discusses consistent API error contract for client consumption.",
+        ]
+        focus_start, focus_end = 6, 11
+    elif skill_id == "sql":
+        question = "DEMO DATA: In demo-study-planner app/db.py lines 1–3, why is parameterized query execution used with limit parameter rather than string formatting?"
+        follow_up = "How would you index this table to optimize filtering on completed and sorting by due_date?"
+        answer_points = [
+            "Explains SQL injection prevention through parameter binding (? placeholder).",
+            "Discusses query plan caching and execution safety.",
+            "Suggests composite index (completed, due_date) to prevent full table scans.",
+        ]
+        focus_start, focus_end = 1, 3
+    else:
+        start_line = citation.get("start_line", 1)
+        end_line = citation.get("end_line", 1)
+        question = f"DEMO DATA: In {citation.get('repo', 'repo')} {citation.get('file_path', 'code')} lines {start_line}–{end_line}, walk me through your implementation of {name}."
+        follow_up = "What edge cases or potential failure modes did you consider in this implementation?"
+        answer_points = [
+            f"Walks through the {name} logic in the cited lines.",
+            "Explains error handling and boundary conditions.",
+            "Discusses testing strategies or refactoring improvements.",
+        ]
+        focus_start, focus_end = start_line, end_line
+
+    return {
+        "id": str(uuid.uuid4()),
+        "skill_id": target["skill_id"],
+        "skill_name": name,
+        "requirement": target["requirement"],
+        "selection_reasons": target["reasons"],
+        "question_type": "explain",
+        "question": question,
+        "follow_up": follow_up,
+        "answer_points": answer_points,
+        "task": None,
+        "anchor": {
+            **{key: value for key, value in citation.items() if key != "warnings"},
+            "focus_start_line": focus_start,
+            "focus_end_line": focus_end,
+            "focus_url": _focus_url(citation, focus_start, focus_end),
+        },
+        "attribution_warnings": citation.get("warnings", []),
+        "source": "pre_generated",
+    }
+
+
 def source_revision(passport: dict[str, Any]) -> str | None:
     return passport.get("updated_at") or passport.get("created_at")
 
@@ -716,23 +786,51 @@ def build_interview_set(passport: dict[str, Any], previous_questions: list[str])
         raise InterviewGenerationError(
             "No requirement or verified code evidence to build interview questions from."
         )
+    is_demo = bool(passport.get("is_demo"))
     code_targets = [target for target in targets if target["kind"] == "code"]
+    if is_demo and len(code_targets) > 2:
+        # Bounded Gemini usage: cap demo code targets to 2
+        code_targets = code_targets[:2]
+
     role_name = (passport.get("role_match") or {}).get("role_name") or passport.get("target_role") or ""
     questions: list[dict[str, Any]] = []
     dropped: list[dict[str, Any]] = []
+    model_used = None
+
     if code_targets:
-        generated, dropped = generate_questions(
-            code_targets, role_name, previous_questions[:MAX_PREVIOUS_QUESTIONS]
-        )
-        by_id = {target["target_id"]: target for target in code_targets}
-        # Keep the selection order (highest priority first), then the model's order per anchor.
-        for target in code_targets:
-            questions += [_code_question(item, by_id[item.anchor_id]) for item in generated if item.anchor_id == target["target_id"]]
+        generated: list[ProposedQuestion] = []
+        if is_demo:
+            try:
+                if config.GEMINI_API_KEY:
+                    generated, dropped = generate_questions(
+                        code_targets, role_name, previous_questions[:MAX_PREVIOUS_QUESTIONS]
+                    )
+                    model_used = config.GEMINI_MODEL
+                else:
+                    raise InterviewGenerationError("No API key configured for demo generation.")
+            except Exception as exc:
+                logger.info("Falling back to pre-generated interview questions for demo passport: %s", exc)
+                questions += [_pregenerated_demo_code_question(target) for target in code_targets]
+                model_used = "pre-generated-fallback"
+        else:
+            generated, dropped = generate_questions(
+                code_targets, role_name, previous_questions[:MAX_PREVIOUS_QUESTIONS]
+            )
+            model_used = config.GEMINI_MODEL
+
+        if generated:
+            by_id = {target["target_id"]: target for target in code_targets}
+            # Keep the selection order (highest priority first), then the model's order per anchor.
+            for target in code_targets:
+                questions += [_code_question(item, by_id[item.anchor_id]) for item in generated if item.anchor_id == target["target_id"]]
+
     questions += [_discussion_question(target) for target in targets if target["kind"] == "discussion"]
     payload = {
         "prompt_version": PROMPT_VERSION,
-        "model": config.GEMINI_MODEL if code_targets else None,
+        "model": model_used,
         "role_name": role_name,
+        "is_demo": is_demo,
+        "demo_notice": "DEMO DATA (disposable temporary session)" if is_demo else None,
         "targets": [
             {key: target.get(key) for key in ("target_id", "kind", "skill_id", "skill_name", "level", "attribution", "requirement", "reasons")}
             | {"citation": (
@@ -812,6 +910,8 @@ def session_view(session: dict[str, Any], passport: dict[str, Any] | None) -> di
         "passport_changed": revision_changed,
         "error": session.get("error"),
         "role_name": payload.get("role_name"),
+        "is_demo": payload.get("is_demo", False),
+        "demo_notice": payload.get("demo_notice"),
         "targets": payload.get("targets", []),
         "dropped": payload.get("dropped", []),
         "questions": questions,

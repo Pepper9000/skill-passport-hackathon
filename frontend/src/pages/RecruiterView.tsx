@@ -155,7 +155,13 @@ export default function RecruiterView() {
             <h1>{passport.github_username}{passport.is_demo && <span className="demo-badge">DEMO DATA</span>}</h1>
           </div>
           <p className="hero-sub"><span className="lead">{met} of {total} requirements met for {passport.target_role}.</span> {gap ? `The gap is ${skillLabel(gap)}.` : "All requirements met."}</p>
-          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Interview generation, assessments, re-checks and review updates are disabled. Sign in with a named recruiter secret from <code>RECRUITER_ACCOUNTS</code> to perform write actions.</p>}
+          {user?.readOnly && (
+            passport.is_demo ? (
+              <p className="notice notice-warning">Interactive demo mode: You can generate interview questions and record assessments for this demo candidate in an isolated preview session. Re-checks and review updates remain disabled. Sign in with a named recruiter secret from <code>RECRUITER_ACCOUNTS</code> for live candidate actions.</p>
+            ) : (
+              <p className="notice notice-warning">Read-only demo recruiter preview. Interview generation, assessments, re-checks and review updates are disabled for live candidates. Sign in with a named recruiter secret from <code>RECRUITER_ACCOUNTS</code> to perform write actions.</p>
+            )
+          )}
           <p className="hero-sub hero-meta-line">
             <span className={`verify-pill verify-${verify.tier.replace(" ", "-").toLowerCase()}`} title={verify.warnings.map(({ signal, where }) => `${signal.label} (${where}): ${signal.detail}`).join("\n") || undefined}>Verifiability: {verify.tier === "Not checked" ? "not checked" : `${verify.tier} · ${verify.passed} of ${verify.checked} checks`}</span>
             {verify.earlierSources > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {earlierSourcesText(verify.earlierSources)}</span>}
@@ -274,7 +280,12 @@ export default function RecruiterView() {
       </div>
       <div id="recruiter-panel-interview" role="tabpanel" aria-labelledby="recruiter-tab-interview" tabIndex={0} hidden={section !== "interview"} style={{ display: section === "interview" ? undefined : "none" }}>
         <div className="section-col">
-          <InterviewWorkspace passportId={passport.id} onOutcomeSaved={refreshPassport} readOnly={user?.readOnly} />
+          <InterviewWorkspace
+            passportId={passport.id}
+            onOutcomeSaved={refreshPassport}
+            readOnly={user?.readOnly ? !passport.is_demo : false}
+            isDemo={passport.is_demo}
+          />
           <details className="panel interview-panel practice-panel practice-collapsible">
             <summary className="panel-heading">
               <div><div className="eyebrow">SHOWN TO THE STUDENT FOR PRACTICE</div><h2>Student practice questions</h2></div>

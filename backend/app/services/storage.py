@@ -1400,13 +1400,24 @@ def save_interview_assessment(
     return assessment
 
 
-def list_interview_outcomes(passport_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
-    """Saved outcomes of ready interview sets (any recruiter), per passport, newest set first.
+def list_interview_outcomes(
+    passport_ids: list[str], recruiter_id: str | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """Saved outcomes of ready interview sets, per passport, newest set first.
+    For demo recruiters, only this visitor's session outcomes are returned.
+    For standard views, demo recruiter sessions are excluded so temporary demo sessions never alter production views.
     Each row carries the question's skill, so levels can be adjusted per skill."""
     if not passport_ids:
         return {}
     initialize_storage()
     placeholders = ",".join("?" for _ in passport_ids)
+    if recruiter_id and recruiter_id.startswith("demo-recruiter"):
+        recruiter_filter = "AND sessions.recruiter_id = ?"
+        params: list[Any] = [*passport_ids, recruiter_id]
+    else:
+        recruiter_filter = "AND NOT sessions.recruiter_id LIKE 'demo-recruiter%'"
+        params = list(passport_ids)
+
     with _connect() as connection:
         rows = connection.execute(
             f"""
@@ -1416,12 +1427,31 @@ def list_interview_outcomes(passport_ids: list[str]) -> dict[str, list[dict[str,
             FROM interview_assessments AS assessments
             JOIN interview_questions AS questions ON questions.id = assessments.question_id
             JOIN interview_sessions AS sessions ON sessions.id = assessments.session_id
-            WHERE sessions.passport_id IN ({placeholders}) AND sessions.status = 'ready'
+            WHERE sessions.passport_id IN ({placeholders}) AND sessions.status = 'ready' {recruiter_filter}
             ORDER BY sessions.created_at DESC, sessions.id, assessments.assessed_at DESC
             """,
-            passport_ids,
+            params,
         ).fetchall()
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         grouped.setdefault(row["passport_id"], []).append(dict(row))
     return grouped
+
+
+def cleanup_expired_demo_sessions(ttl_hours: int = 2) -> None:
+    """Prunes temporary demo interview sessions older than the TTL."""
+    initialize_storage()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
+    with _connect() as connection:
+        demo_sessions = connection.execute(
+            "SELECT id FROM interview_sessions WHERE recruiter_id LIKE 'demo-recruiter%' AND created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        if not demo_sessions:
+            return
+        ids = [row["id"] for row in demo_sessions]
+        placeholders = ",".join("?" for _ in ids)
+        connection.execute(f"DELETE FROM interview_assessments WHERE session_id IN ({placeholders})", ids)
+        connection.execute(f"DELETE FROM interview_questions WHERE session_id IN ({placeholders})", ids)
+        connection.execute(f"DELETE FROM interview_sessions WHERE id IN ({placeholders})", ids)
+

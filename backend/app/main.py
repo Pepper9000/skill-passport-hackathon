@@ -83,6 +83,7 @@ from app.services.storage import (
     complete_interview_session,
     create_evidence_request,
     create_recruiter_session,
+    cleanup_expired_demo_sessions,
     create_review_request,
     evidence_audit_trail,
     delete_recruiter_session,
@@ -439,10 +440,12 @@ def _excluded_keys(passport: dict[str, Any]) -> set[str]:
     }
 
 
-def review_view(passport: dict[str, Any]) -> dict[str, Any]:
+def review_view(passport: dict[str, Any], recruiter_id: str | None = None) -> dict[str, Any]:
     """The full passport for recruiters, with the student's review requests and levels adjusted
     by recorded interview outcomes (the stored passport keeps evidence-only levels)."""
-    passport = apply_interview_levels(passport, list_interview_outcomes([passport["id"]]).get(passport["id"], []))
+    passport = apply_interview_levels(
+        passport, list_interview_outcomes([passport["id"]], recruiter_id=recruiter_id).get(passport["id"], [])
+    )
     return {
         **_without_disabled_features(passport),
         "check_labels": CHECK_LABELS,
@@ -507,6 +510,31 @@ def _recruiter_id_from_credentials(key: str | None, authorization: str | None) -
     return _recruiter_id_for_key(key) or _recruiter_id_for_session(authorization)
 
 
+def is_demo_recruiter(recruiter_id: str | None) -> bool:
+    return bool(
+        recruiter_id
+        and (
+            recruiter_id == config.DEMO_RECRUITER_ID
+            or recruiter_id.startswith("demo-recruiter")
+        )
+    )
+
+
+def _effective_recruiter_id(
+    recruiter_id: str,
+    x_recruiter_key: str | None = None,
+    authorization: str | None = None,
+) -> str:
+    if not is_demo_recruiter(recruiter_id):
+        return recruiter_id
+    token = _bearer_token(authorization)
+    if token:
+        return f"demo-recruiter:{hashlib.sha256(token.encode()).hexdigest()[:12]}"
+    if x_recruiter_key:
+        return f"demo-recruiter:{hashlib.sha256(x_recruiter_key.encode()).hexdigest()[:12]}"
+    return config.DEMO_RECRUITER_ID
+
+
 def require_recruiter(
     x_recruiter_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
@@ -536,7 +564,7 @@ def require_recruiter(
 
 
 def require_recruiter_write(recruiter_id: str = Depends(require_recruiter)) -> str:
-    if recruiter_id == config.DEMO_RECRUITER_ID:
+    if is_demo_recruiter(recruiter_id):
         raise HTTPException(status_code=403, detail="The demo recruiter account is read-only.")
     return recruiter_id
 
@@ -559,7 +587,7 @@ def _require_passport_access(
     authorization: str | None = None,
 ) -> None:
     recruiter_id = _recruiter_id_from_credentials(recruiter_key, authorization)
-    if recruiter_id == config.DEMO_RECRUITER_ID:
+    if is_demo_recruiter(recruiter_id):
         raise HTTPException(status_code=403, detail="The demo recruiter account cannot re-check passports.")
     if _valid_token_hash(get_passport_owner_token_hash(passport_id), token):
         return
@@ -938,7 +966,7 @@ def passport(passport_id: str, background_tasks: BackgroundTasks) -> dict:
 
 
 def _require_demo_passport_access(passport: dict[str, Any], recruiter_id: str) -> None:
-    if recruiter_id == config.DEMO_RECRUITER_ID and not is_trusted_demo_passport(passport["id"]):
+    if is_demo_recruiter(recruiter_id) and not is_trusted_demo_passport(passport["id"]):
         raise HTTPException(status_code=404, detail="Passport not found.")
 
 
@@ -946,13 +974,16 @@ def _require_demo_passport_access(passport: dict[str, Any], recruiter_id: str) -
 def review_passport(
     passport_id: str,
     background_tasks: BackgroundTasks,
-    recruiter_id: str = Depends(require_recruiter),
+    x_recruiter_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> dict:
+    recruiter_id = require_recruiter(x_recruiter_key, authorization)
     stored = _stored_passport(passport_id, background_tasks, queue_backfill=False)
     _require_demo_passport_access(stored, recruiter_id)
-    if recruiter_id != config.DEMO_RECRUITER_ID:
+    if not is_demo_recruiter(recruiter_id):
         _maybe_queue_depth_backfill(stored, background_tasks)
-    return review_view(stored)
+    effective_id = _effective_recruiter_id(recruiter_id, x_recruiter_key, authorization)
+    return review_view(stored, recruiter_id=effective_id)
 
 
 @app.get("/passports")
@@ -961,7 +992,7 @@ def passports(
     offset: int = Query(0, ge=0),
     recruiter_id: str = Depends(require_recruiter),
 ) -> dict:
-    demo_only = recruiter_id == config.DEMO_RECRUITER_ID
+    demo_only = is_demo_recruiter(recruiter_id)
     items, total = list_passports_page(limit, offset, demo_only=demo_only)
     all_requests = get_review_requests_by_passports([item["id"] for item in items])
     return {
@@ -978,7 +1009,7 @@ def review_passports(
     offset: int = Query(0, ge=0),
     recruiter_id: str = Depends(require_recruiter),
 ) -> dict:
-    demo_only = recruiter_id == config.DEMO_RECRUITER_ID
+    demo_only = is_demo_recruiter(recruiter_id)
     items, total = list_latest_passports_page(limit, offset, demo_only=demo_only)
     all_requests = get_review_requests_by_passports([item["id"] for item in items])
     outcomes = list_interview_outcomes([item["id"] for item in items])
@@ -1273,12 +1304,18 @@ def _session_response(session: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/passport/{passport_id}/interview-sessions")
-def interview_sessions(passport_id: str, recruiter_id: str = Depends(require_recruiter)) -> dict:
+def interview_sessions(
+    passport_id: str,
+    x_recruiter_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    recruiter_id = require_recruiter(x_recruiter_key, authorization)
     passport = get_passport(passport_id)
     if not passport:
         raise HTTPException(status_code=404, detail="Passport not found.")
     _require_demo_passport_access(passport, recruiter_id)
-    return {"items": [session_view(item, passport) for item in list_interview_sessions(passport_id, recruiter_id)]}
+    effective_id = _effective_recruiter_id(recruiter_id, x_recruiter_key, authorization)
+    return {"items": [session_view(item, passport) for item in list_interview_sessions(passport_id, effective_id)]}
 
 
 @app.post("/passport/{passport_id}/interview-sessions", status_code=201)
@@ -1286,7 +1323,8 @@ def create_interview_session(
     passport_id: str,
     request: Request,
     response: Response,
-    recruiter_id: str = Depends(require_recruiter_write),
+    x_recruiter_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
     idempotency_key: str | None = Header(default=None, max_length=100),
 ) -> dict:
     """Generate and save a fresh private interview set without rebuilding the passport.
@@ -1294,12 +1332,28 @@ def create_interview_session(
     Retrying with the same Idempotency-Key returns the same session instead of a second set.
     A failed generation is saved as failed (no questions) and returned as 503; retry with a new key.
     """
+    recruiter_id = require_recruiter(x_recruiter_key, authorization)
     passport = get_passport(passport_id)
     if not passport:
         raise HTTPException(status_code=404, detail="Passport not found.")
-    check_rate_limit(request, "interview_session", max_requests=12, window_seconds=600)
+
+    is_demo = is_demo_recruiter(recruiter_id)
+    if is_demo:
+        # Enforce server-side authorization: demo recruiter can ONLY target explicitly marked demo passports
+        if not passport.get("is_demo") or not is_trusted_demo_passport(passport_id):
+            raise HTTPException(
+                status_code=403,
+                detail="The demo recruiter account is read-only.",
+            )
+        check_rate_limit(request, "demo_interview_session", max_requests=5, window_seconds=600)
+    else:
+        check_rate_limit(request, "interview_session", max_requests=12, window_seconds=600)
+
+    effective_id = _effective_recruiter_id(recruiter_id, x_recruiter_key, authorization)
+    cleanup_expired_demo_sessions()
+
     key = (idempotency_key or "").strip() or str(uuid.uuid4())
-    session, outcome = start_interview_session(passport_id, recruiter_id, key, source_revision(passport))
+    session, outcome = start_interview_session(passport_id, effective_id, key, source_revision(passport))
     if outcome == "busy" or (outcome == "existing" and session["status"] == "generating"):
         raise HTTPException(status_code=409, detail="An interview set for this candidate is still being generated.")
     if outcome == "existing":
@@ -1309,7 +1363,7 @@ def create_interview_session(
         return _session_response(get_interview_session(session["id"]) or session)
     previous = [
         question["question"]
-        for item in list_interview_sessions(passport_id, recruiter_id)
+        for item in list_interview_sessions(passport_id, effective_id)
         for question in item.get("questions", [])
     ]
     # Renew the reservation while generation runs: storage's interruption window counts from
@@ -1337,17 +1391,29 @@ def create_interview_session(
         raise HTTPException(status_code=500, detail="Interview generation failed unexpectedly. Try again.") from exc
     finally:
         heartbeat_stop.set()
-    return _session_response(_owned_session(session["id"], recruiter_id))
+    return _session_response(_owned_session(session["id"], effective_id))
 
 
 @app.get("/interview-sessions/{session_id}")
-def interview_session(session_id: str, recruiter_id: str = Depends(require_recruiter)) -> dict:
-    return _session_response(_owned_session(session_id, recruiter_id))
+def interview_session(
+    session_id: str,
+    x_recruiter_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    recruiter_id = require_recruiter(x_recruiter_key, authorization)
+    effective_id = _effective_recruiter_id(recruiter_id, x_recruiter_key, authorization)
+    return _session_response(_owned_session(session_id, effective_id))
 
 
 @app.get("/interview-sessions/{session_id}/summary")
-def interview_session_summary(session_id: str, recruiter_id: str = Depends(require_recruiter)) -> dict:
-    return _session_response(_owned_session(session_id, recruiter_id))["summary"]
+def interview_session_summary(
+    session_id: str,
+    x_recruiter_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    recruiter_id = require_recruiter(x_recruiter_key, authorization)
+    effective_id = _effective_recruiter_id(recruiter_id, x_recruiter_key, authorization)
+    return _session_response(_owned_session(session_id, effective_id))["summary"]
 
 
 class AssessmentBody(BaseModel):
@@ -1360,19 +1426,35 @@ def assess_interview_question(
     session_id: str,
     question_id: str,
     body: AssessmentBody,
-    recruiter_id: str = Depends(require_recruiter_write),
+    request: Request,
+    x_recruiter_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> dict:
     """Record a recruiter's observation. Recruiter views adjust the skill's level from it on read
     (interview_levels.py); the stored passport, verification and depth scores are unchanged."""
-    session = _owned_session(session_id, recruiter_id)
+    recruiter_id = require_recruiter(x_recruiter_key, authorization)
+    effective_id = _effective_recruiter_id(recruiter_id, x_recruiter_key, authorization)
+
+    if is_demo_recruiter(recruiter_id):
+        # Demo recruiter may only assess questions in their own demo session for an explicitly marked demo passport
+        session = get_interview_session(session_id)
+        if not session or session.get("recruiter_id") != effective_id:
+            raise HTTPException(status_code=403, detail="The demo recruiter account is read-only.")
+        passport = get_passport(session["passport_id"])
+        if not passport or not passport.get("is_demo") or not is_trusted_demo_passport(passport["id"]):
+            raise HTTPException(status_code=403, detail="The demo recruiter account is read-only.")
+        check_rate_limit(request, "demo_assessment", max_requests=30, window_seconds=600)
+    else:
+        session = _owned_session(session_id, effective_id)
+
     if session["status"] != "ready":
         raise HTTPException(status_code=409, detail="Only a ready interview set can be assessed.")
     if body.outcome not in OUTCOMES:
         raise HTTPException(status_code=422, detail=f"Outcome must be one of: {', '.join(OUTCOMES)}.")
     assessment = save_interview_assessment(
-        session_id, question_id, body.outcome, body.note.strip(), recruiter_id
+        session_id, question_id, body.outcome, body.note.strip(), effective_id
     )
     if assessment is None:
         raise HTTPException(status_code=404, detail="Question not found in this interview session.")
-    view = _session_response(_owned_session(session_id, recruiter_id))
+    view = _session_response(_owned_session(session_id, effective_id))
     return {"assessment": assessment, "summary": view["summary"]}
