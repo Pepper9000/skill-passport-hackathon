@@ -14,6 +14,12 @@ EXPECTED_IDS = {
     "demo-sample-backend-01",
     "demo-sample-frontend-01",
     "demo-sample-ml-01",
+    "demo-sample-walkthrough-01",
+}
+UNVERIFIED_IDS = {
+    "demo-sample-backend-01",
+    "demo-sample-frontend-01",
+    "demo-sample-ml-01",
 }
 
 
@@ -42,6 +48,10 @@ def test_fresh_database_startup_seeds_three_unverified_fictional_passports(
     assert {passport["id"] for passport in passports} == EXPECTED_IDS
     for passport in passports:
         assert passport["is_demo"] is True
+
+    unverified = [p for p in passports if p["id"] in UNVERIFIED_IDS]
+    assert len(unverified) == 3
+    for passport in unverified:
         assert passport["sources"]["repos"] == 0
         assert passport["sources"]["reports"] == 2
         assert "demo-learner-" in passport["github_username"]
@@ -65,6 +75,14 @@ def test_fresh_database_startup_seeds_three_unverified_fictional_passports(
             for report in passport["reports"]
         )
 
+    walkthrough = next(p for p in passports if p["id"] == "demo-sample-walkthrough-01")
+    assert walkthrough["sources"]["repos"] == 2
+    assert walkthrough["role_match"]["met"] == 4
+    assert len(walkthrough["growth_tasks"]) == 4
+    assert len(walkthrough["interview_kit"]) == 2
+    assert any(s["level"] == "Demonstrated" for s in walkthrough["skills"])
+    assert any(s["level"] == "Applied" for s in walkthrough["skills"])
+
 
 def test_repeated_startup_is_idempotent(isolated_demo_environment):
     main_module.startup()
@@ -72,7 +90,7 @@ def test_repeated_startup_is_idempotent(isolated_demo_environment):
 
     passports = storage.list_passports()
     assert {passport["id"] for passport in passports} == EXPECTED_IDS
-    assert len(passports) == 3
+    assert len(passports) == 4
 
 
 def test_demo_recruiter_can_list_and_review_seeded_profiles(
@@ -93,14 +111,17 @@ def test_demo_recruiter_can_list_and_review_seeded_profiles(
 
         listing = client.get("/passports/review", headers=headers)
         assert listing.status_code == 200
-        assert listing.json()["total"] == 3
+        assert listing.json()["total"] == 4
         assert {item["id"] for item in listing.json()["items"]} == EXPECTED_IDS
         for passport_id in EXPECTED_IDS:
             response = client.get(f"/passport/{passport_id}/review", headers=headers)
             assert response.status_code == 200
             assert response.json()["is_demo"] is True
-            assert all(skill["level"] == "Claimed" for skill in response.json()["skills"])
-            assert all(not skill["evidence"] for skill in response.json()["skills"])
+            if passport_id in UNVERIFIED_IDS:
+                assert all(skill["level"] == "Claimed" for skill in response.json()["skills"])
+                assert all(not skill["evidence"] for skill in response.json()["skills"])
+            else:
+                assert any(skill["level"] == "Demonstrated" for skill in response.json()["skills"])
             assert client.post(
                 f"/passport/{passport_id}/recheck", headers=headers
             ).status_code == 403

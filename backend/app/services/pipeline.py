@@ -341,7 +341,8 @@ def build_passport(
         )
     except Exception as exc:  # verified evidence is still valid without the AI write-up
         logger.exception("Growth plan / interview kit generation failed")
-        generated = {"growth_tasks": [], "interview_kit": [], "generation_error": exc.__class__.__name__}
+        error_detail = str(exc) if "GEMINI_API_KEY" in str(exc) else exc.__class__.__name__
+        generated = {"growth_tasks": [], "interview_kit": [], "generation_error": error_detail}
     generation_error = generated.get("generation_error")
     if generation_error:
         generation_warning = (

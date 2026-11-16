@@ -11,7 +11,7 @@ import SectionTabs from "../components/SectionTabs";
 import SqlDepthPanel from "../components/SqlDepthPanel";
 import SkillDepthPanel from "../components/SkillDepthPanel";
 import SkillLevel from "../components/SkillLevel";
-import { GROWTH_UNAVAILABLE, growthUnavailable, KIT_UNAVAILABLE, kitUnavailable } from "../passportNotes";
+import { growthUnavailable, growthUnavailableMessage, KIT_UNAVAILABLE, kitUnavailable } from "../passportNotes";
 import { earlierSourcesText, notWrittenText, verifiability } from "../verifiability";
 import SkillName from "../components/SkillName";
 import { useAuth } from "../auth";
@@ -155,7 +155,7 @@ export default function RecruiterView() {
             <h1>{passport.github_username}{passport.is_demo && <span className="demo-badge">DEMO DATA</span>}</h1>
           </div>
           <p className="hero-sub"><span className="lead">{met} of {total} requirements met for {passport.target_role}.</span> {gap ? `The gap is ${skillLabel(gap)}.` : "All requirements met."}</p>
-          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Interview generation, assessments, re-checks and review updates are disabled.</p>}
+          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Interview generation, assessments, re-checks and review updates are disabled. Sign in with a named recruiter secret from <code>RECRUITER_ACCOUNTS</code> to perform write actions.</p>}
           <p className="hero-sub hero-meta-line">
             <span className={`verify-pill verify-${verify.tier.replace(" ", "-").toLowerCase()}`} title={verify.warnings.map(({ signal, where }) => `${signal.label} (${where}): ${signal.detail}`).join("\n") || undefined}>Verifiability: {verify.tier === "Not checked" ? "not checked" : `${verify.tier} · ${verify.passed} of ${verify.checked} checks`}</span>
             {verify.earlierSources > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {earlierSourcesText(verify.earlierSources)}</span>}
@@ -168,7 +168,7 @@ export default function RecruiterView() {
             <div className="account-checks-body">
               <CoverageSummary coverage={passport.coverage} />
               <IdentityChecks signals={passport.identity} />
-              {growthUnavailable(passport) && <p className="unavailable-note">{GROWTH_UNAVAILABLE}</p>}
+              {growthUnavailable(passport) && <p className="unavailable-note">{growthUnavailableMessage(passport)}</p>}
             </div>
           </details>
           <div className="hero-actions">

@@ -14,7 +14,7 @@ import ReportsPanel from "../components/ReportsPanel";
 import SqlDepthPanel from "../components/SqlDepthPanel";
 import SkillDepthPanel from "../components/SkillDepthPanel";
 import { LEVEL_HELP_STUDENT, LEVEL_NOTE } from "../levels";
-import { GROWTH_UNAVAILABLE, growthUnavailable } from "../passportNotes";
+import { growthUnavailable, growthUnavailableMessage } from "../passportNotes";
 import { skillName } from "../skillNames";
 import SkillName from "../components/SkillName";
 import { MAX_CONSECUTIVE_POLL_FAILURES, nextJobPollDelay, pollJobAttempt } from "../jobPolling";
@@ -244,7 +244,7 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
             {passport.roadmap ? <Roadmap roadmap={passport.roadmap} /> : passport.growth_tasks.length ? passport.growth_tasks.map((task) => (
               <GrowthCard key={task.skill_id} task={task} onRecheck={recheck} busy={busy} />
             )) : growthUnavailable(passport)
-              ? <div className="notice notice-warning">{GROWTH_UNAVAILABLE}</div>
+              ? <div className="notice notice-warning">{growthUnavailableMessage(passport)}</div>
               : <div className="empty-state">No role gaps found. Keep building and use Re-check when your work changes.</div>}
             {pollingPaused && <button className="button button-light" onClick={() => { setError(""); setPollingPaused(false); }}>Retry status check</button>}
             <button className="button recheck-button" onClick={recheck} disabled={busy}><RefreshCw size={15} className={busy && !pollingPaused ? "spin" : ""} /> {busy ? (pollingPaused ? "Re-check pending" : "Re-checking GitHub…") : "Re-check GitHub"}</button>

@@ -412,6 +412,7 @@ def save_trusted_demo_passport(passport: dict[str, Any]) -> None:
                 (trusted_passport["id"],),
             ).fetchone()
             if trusted:
+                _save_passport(connection, trusted_passport)
                 return
             raise ValueError(
                 f"Refusing to trust an existing non-demo passport: {trusted_passport['id']}."

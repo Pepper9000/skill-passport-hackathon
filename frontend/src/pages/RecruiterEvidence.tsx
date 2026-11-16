@@ -68,7 +68,7 @@ export default function RecruiterEvidence() {
             {verify.notWritten > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {notWrittenText(verify.notWritten)}</span>}
           </p>
           <CoverageSummary coverage={passport.coverage} />
-          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Review requests cannot be updated.</p>}
+          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Review requests and candidate questions cannot be updated. Sign in with a named recruiter secret from <code>RECRUITER_ACCOUNTS</code> to perform review actions.</p>}
           <div className="hero-actions">
             <Link className="button button-light" to={`/recruiter/${passport.id}`}><ArrowLeft size={15} /> Recruiter summary</Link>
           </div>

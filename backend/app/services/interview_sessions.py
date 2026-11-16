@@ -611,7 +611,9 @@ def generate_questions(
 ) -> tuple[list[ProposedQuestion], list[dict[str, Any]]]:
     """One Gemini call (plus one retry on invalid output). Raises InterviewGenerationError."""
     if not config.GEMINI_API_KEY:
-        raise InterviewGenerationError("Interview generation needs Gemini, which is not configured on this server.")
+        raise InterviewGenerationError(
+            "Interview question generation requires GEMINI_API_KEY to be configured in backend environment variables."
+        )
     anchors = {target["target_id"]: target for target in targets}
     prompt = build_prompt(targets, role_name, previous)
     client = create_gemini_client(config.GEMINI_API_KEY)

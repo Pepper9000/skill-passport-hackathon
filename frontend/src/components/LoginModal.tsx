@@ -138,6 +138,9 @@ export default function LoginModal() {
             <div><dt>Username</dt><dd>{DEMO_PROFILES.recruiter.user.email}</dd></div>
             <div><dt>Password</dt><dd>{DEMO_PROFILES.recruiter.passwordHint}</dd></div>
           </dl>
+          <p className="auth-demo-note" style={{ marginTop: "10px", fontSize: "11.5px", color: "var(--muted)", lineHeight: 1.45 }}>
+            <strong>Note:</strong> Public demo login is read-only. To test write actions (interview generation, question assessments, re-checks, and review updates), enter your named recruiter username and secret key configured in <code>RECRUITER_ACCOUNTS</code>.
+          </p>
         </section>
 
         {errorMessage && (

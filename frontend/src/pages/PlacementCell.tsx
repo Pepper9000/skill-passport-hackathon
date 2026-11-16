@@ -5,7 +5,7 @@ import { api, NOT_FOUND_TOOLTIP, skillLabel, type Passport, type Role } from "..
 import SkillName from "../components/SkillName";
 import SectionTabs from "../components/SectionTabs";
 import { adjustmentLabel } from "../interview";
-import { COVERAGE_MISSING, GROWTH_UNAVAILABLE, growthUnavailable } from "../passportNotes";
+import { COVERAGE_MISSING, growthUnavailable, growthUnavailableMessage } from "../passportNotes";
 import { earlierSourcesText, excludedCitations, excludedCitationsText, latestPerStudent, notWrittenText, rankCandidates, requirementsMet, type Verifiability } from "../verifiability";
 
 function VerifyPill({ verify }: { verify: Verifiability }) {
@@ -259,7 +259,7 @@ export default function PlacementCell() {
                   <tr key={row.passport.id} className={index === 0 ? "rank-top" : ""}>
                     <td className="rank-number">{index + 1}</td>
                     <td><Link to={`/recruiter/${row.passport.id}`}>{row.passport.github_username}</Link>{row.passport.is_demo && <small className="demo-tag">DEMO</small>}<div className="muted">{row.verify.codeSkills} code-backed skills</div>
-                      {growthUnavailable(row.passport) && <div className="unavailable-note">{GROWTH_UNAVAILABLE}</div>}
+                      {growthUnavailable(row.passport) && <div className="unavailable-note">{growthUnavailableMessage(row.passport)}</div>}
                       {!row.passport.coverage && <div className="unavailable-note">{COVERAGE_MISSING}</div>}</td>
                     <td>{row.mustMet} of {row.mustTotal}</td>
                     <td>{row.met} of {requirements.length}</td>

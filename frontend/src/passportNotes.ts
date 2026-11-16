@@ -7,6 +7,18 @@ export const COVERAGE_MISSING = "Coverage not recorded. Re-check to update.";
 
 const generationFailed = (passport: Passport) => Boolean(passport.generation_error || passport.generation_warning);
 
+/** Return specific actionable reason if generation failed or empty state note. */
+export function growthUnavailableMessage(passport: Passport): string {
+  if (passport.generation_warning) return passport.generation_warning;
+  if (passport.generation_error) {
+    return `The growth plan could not be generated (${passport.generation_error}). Re-check to try again.`;
+  }
+  if (passport.is_demo && (!passport.sources?.repos || passport.sources.repos === 0)) {
+    return "Growth plan unavailable: this demo candidate has no repository attached. Attach repositories to generate repository-specific tasks.";
+  }
+  return GROWTH_UNAVAILABLE;
+}
+
 /** No growth tasks although generation failed or the role has gaps. */
 export function growthUnavailable(passport: Passport): boolean {
   return !passport.growth_tasks.length

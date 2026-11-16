@@ -184,7 +184,9 @@ def generate_growth_and_kit(
     ingestion: dict[str, Any],
 ) -> dict[str, Any]:
     if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not configured; growth and interview generation require Gemini.")
+        raise RuntimeError(
+            "Growth plan generation requires GEMINI_API_KEY to be configured in backend environment variables."
+        )
     prompt, expected_growth_ids, expected_interview_ids = _build_prompt(
         skills, role_match, ingestion
     )

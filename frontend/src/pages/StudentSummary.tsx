@@ -25,7 +25,7 @@ import { api, skillLabel, type Passport, type PassportSkill } from "../api";
 import SkillName from "../components/SkillName";
 import LadderPill from "../components/LadderPill";
 import { sqlDepthHeadline } from "../sqlDepth";
-import { growthUnavailable, GROWTH_UNAVAILABLE } from "../passportNotes";
+import { growthUnavailable, growthUnavailableMessage } from "../passportNotes";
 import { showsNotCountedNote } from "../evidencePanel";
 
 export default function StudentSummary() {
@@ -543,7 +543,7 @@ export default function StudentSummary() {
               ))}
             </div>
           ) : growthUnavailable(passport) ? (
-            <div className="summary-empty-note">{GROWTH_UNAVAILABLE}</div>
+            <div className="summary-empty-note">{growthUnavailableMessage(passport)}</div>
           ) : (
             <div className="summary-empty-note">
               No gaps found for <strong>{passport.target_role}</strong>. Re-check after publishing new work.
