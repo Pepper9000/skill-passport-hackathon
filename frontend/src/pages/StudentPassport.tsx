@@ -14,7 +14,7 @@ import ReportsPanel from "../components/ReportsPanel";
 import SqlDepthPanel from "../components/SqlDepthPanel";
 import SkillDepthPanel from "../components/SkillDepthPanel";
 import { LEVEL_HELP_STUDENT, LEVEL_NOTE } from "../levels";
-import { GROWTH_UNAVAILABLE, growthUnavailable } from "../passportNotes";
+import { GROWTH_UNAVAILABLE, growthUnavailable, KIT_UNAVAILABLE, kitUnavailable } from "../passportNotes";
 import { skillName } from "../skillNames";
 import SkillName from "../components/SkillName";
 import { MAX_CONSECUTIVE_POLL_FAILURES, nextJobPollDelay, pollJobAttempt } from "../jobPolling";
@@ -209,7 +209,7 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
       </details>
       <div className="passport-grid">
         <div className="skill-column">
-          {audience === "student" && (passport.evidence_requests?.length ?? 0) > 0 && (
+          {audience === "student" && api.hasPassportToken(passport.id) && (passport.evidence_requests?.length ?? 0) > 0 && (
             <EvidenceQuestions passportId={passport.id} requests={passport.evidence_requests ?? []}
               onChanged={() => { load().catch((reason: Error) => setError(reason.message)); }} />
           )}
@@ -246,8 +246,9 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
               ? <div className="notice notice-warning">{GROWTH_UNAVAILABLE}</div>
               : <div className="empty-state">No role gaps found. Keep building and use Re-check when your work changes.</div>}
             {pollingPaused && <button className="button button-light" onClick={() => { setError(""); setPollingPaused(false); }}>Retry status check</button>}
-            <button className="button recheck-button" onClick={recheck} disabled={busy}><RefreshCw size={15} className={busy && !pollingPaused ? "spin" : ""} /> {busy ? (pollingPaused ? "Re-check pending" : "Re-checking GitHub…") : "Re-check GitHub"}</button>
+            {api.hasPassportToken(passport.id) ? <button className="button recheck-button" onClick={recheck} disabled={busy}><RefreshCw size={15} className={busy && !pollingPaused ? "spin" : ""} /> {busy ? (pollingPaused ? "Re-check pending" : "Re-checking GitHub…") : "Re-check GitHub"}</button> : <p className="muted">Re-check is available only in the browser session that created this passport.</p>}
           </section>
+          {audience === "student" && kitUnavailable(passport) && <section className="panel practice-panel"><h2>Practice questions</h2><p className="notice notice-warning">{KIT_UNAVAILABLE}</p></section>}
           {audience === "student" && passport.interview_kit.length > 0 && (
             <section className="panel practice-panel">
               <div className="panel-heading"><div><div className="eyebrow">DEFEND YOUR WORK</div><h2>Practice questions</h2></div><span className="count-tag">{passport.interview_kit.length} skills</span></div>
