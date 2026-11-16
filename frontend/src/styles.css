@@ -1099,3 +1099,11 @@ p, h1, h2, h3, td, dd { overflow-wrap: anywhere; }
 
 .auth-modal-backdrop, .auth-modal-card { animation: none; }
 .create-hero h1, .create-hero .hero-sub, .create-hero-line, .create-hero-rule { animation: none; opacity: 1; filter: none; transform: none; }
+
+@media print {
+  :root { color-scheme: light; --ground: #fff; --ink: #111; --ink-soft: #334155; --muted: #475569; --subtle: #475569; --line: #cbd5e1; --surface: #fff; --surface-soft: #fff; }
+  html, body, .app-shell, main { background: #fff !important; color: #111 !important; }
+  .skip-link { display: none !important; }
+  .summary-paper p, .summary-paper small, .summary-paper code, .summary-paper li, .summary-paper th, .summary-paper span { color: #334155 !important; }
+  .summary-paper code { background: #f1f5f9 !important; }
+}
