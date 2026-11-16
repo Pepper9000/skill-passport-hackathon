@@ -59,7 +59,7 @@ export default function AuditTrail({ trail }: { trail: AuditEvent[] }) {
       ) : (
         <div className="empty-state audit-empty">
           <History size={18} aria-hidden="true" />
-          <p>No {filterLabel} events yet.</p>
+          <p>{filter === "all" ? "No events yet." : `No ${filterLabel} events yet.`}</p>
           <small>Verify, flag or reject evidence above and every decision lands here, oldest first.</small>
         </div>
       )}

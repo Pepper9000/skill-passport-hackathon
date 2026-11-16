@@ -113,7 +113,7 @@ function RecruiterExcluded({ item, request, onChanged, readOnly }: { item: Rejec
           {request.status === "open" && !readOnly
             ? <button className="button button-light" onClick={markReviewed} disabled={busy}>{busy ? "Saving…" : "Mark reviewed"}</button>
             : request.status === "reviewed" && <p className="review-status"><Check size={12} /> Reviewed {request.reviewed_at ? new Date(request.reviewed_at).toLocaleDateString() : ""}</p>}
-          {request.status === "open" && readOnly && <p className="muted">Read-only demo account cannot update review requests.</p>}
+          {request.status === "open" && readOnly && <p className="muted">Your account cannot update review requests.</p>}
           {error && <p className="notice-error">{error}</p>}
         </div>
       )}

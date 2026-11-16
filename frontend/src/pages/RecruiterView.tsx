@@ -152,10 +152,10 @@ export default function RecruiterView() {
           <div className="hero-eyebrow">Recruiter view{passport.updated_at ? ` · Updated ${new Date(passport.updated_at).toLocaleDateString()}` : ""}</div>
           <div className="hero-title-row">
             <CandidateAvatar key={passport.github_username} username={passport.github_username} />
-            <h1>{passport.github_username}{passport.is_demo && <span className="demo-badge">DEMO DATA</span>}</h1>
+            <h1>{passport.github_username}</h1>
           </div>
           <p className="hero-sub"><span className="lead">{met} of {total} requirements met for {passport.target_role}.</span> {gap ? `The gap is ${skillLabel(gap)}.` : "All requirements met."}</p>
-          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Interview generation, assessments, re-checks and review updates are disabled.</p>}
+
           <p className="hero-sub hero-meta-line">
             <span className={`verify-pill verify-${verify.tier.replace(" ", "-").toLowerCase()}`} title={verify.warnings.map(({ signal, where }) => `${signal.label} (${where}): ${signal.detail}`).join("\n") || undefined}>Verifiability: {verify.tier === "Not checked" ? "not checked" : `${verify.tier} · ${verify.passed} of ${verify.checked} checks`}</span>
             {verify.earlierSources > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {earlierSourcesText(verify.earlierSources)}</span>}

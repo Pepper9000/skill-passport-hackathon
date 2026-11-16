@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api, setAuthRequiredHandler } from "./api";
 import {
-  type DemoProfile,
-  DEMO_PROFILES,
   type User,
   type UserRole,
   canAccessRoute,
@@ -10,8 +8,8 @@ import {
   parseStoredUser,
 } from "./authTypes";
 
-export type { DemoProfile, User, UserRole };
-export { DEMO_PROFILES, canAccessRoute };
+export type { User, UserRole };
+export { canAccessRoute };
 
 const STORAGE_KEY = "skill_passport_auth_session";
 const LOGIN_DISMISSED_KEY = "skill_passport_login_dismissed";
@@ -60,13 +58,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // with /auth/me. A keyless development server holds no token, yet its sign-in is valid,
       // so the profile is kept until the server answers instead of being dropped on refresh.
       const user = parseStoredUser(localStorage.getItem(STORAGE_KEY));
-      const dismissed = !user && sessionStorage.getItem(LOGIN_DISMISSED_KEY) === "1";
-      return { user, isLoginModalOpen: !user && !dismissed };
+      return { user, isLoginModalOpen: false };
     } catch {
-      return { user: null, isLoginModalOpen: true };
+      return { user: null, isLoginModalOpen: false };
     }
   });
-  const [user, setUser] = useState<User | null>(initialSession.user);
+  const [user, setUser] = useState<User | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialSession.isLoginModalOpen);
   const [authError, setAuthError] = useState("");
 
@@ -86,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUser((current) => current?.role === "recruiter"
             ? { ...current, id: identity.recruiter_id, readOnly: identity.read_only }
-            : current);
+            : initialSession.user ? { ...initialSession.user, id: identity.recruiter_id, name: displayNameFromLogin(identity.recruiter_id), readOnly: identity.read_only } : null);
         }
       }).catch(() => undefined);
     }
@@ -105,14 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
-  /** Signing in as a student ends any recruiter session in this browser. */
-  const setStudent = (student: User) => {
-    void api.recruiterLogout();
-    setAuthError("");
-    setUser(student);
-    setIsLoginModalOpen(false);
-  };
-
   const setRecruiter = (recruiter: User) => {
     setAuthError("");
     setUser(recruiter);
@@ -120,8 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    const trimmedEmail = email.trim().toLowerCase();
-    const trimmedPass = password.trim();
+    const trimmedEmail = email.trim();
+    const trimmedPass = password;
 
     if (!trimmedEmail) {
       return { success: false, error: "Please enter an email or username." };
@@ -130,61 +119,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: "Please enter a password." };
     }
 
-    // Check recruiter match
-    if (
-      trimmedEmail === DEMO_PROFILES.recruiter.user.email.toLowerCase() ||
-      trimmedEmail.includes("recruiter")
-    ) {
-      const result = await recruiterSignIn(trimmedPass, trimmedEmail);
-      if ("error" in result) return { success: false, error: result.error };
-      const authenticatedUser = {
-        ...DEMO_PROFILES.recruiter.user,
-        id: result.recruiter_id,
-        readOnly: result.read_only,
-      };
-      if (!trimmedEmail.includes("@techcorp.com") && trimmedEmail.includes("@")) {
-        authenticatedUser.email = trimmedEmail;
-      }
-      setRecruiter(authenticatedUser);
-      return { success: true };
-    }
-
-    // Check student match
-    if (
-      trimmedEmail === DEMO_PROFILES.student.user.email.toLowerCase() ||
-      trimmedEmail.includes("student")
-    ) {
-      const authenticatedUser = { ...DEMO_PROFILES.student.user };
-      if (!trimmedEmail.includes("@university.edu") && trimmedEmail.includes("@")) {
-        authenticatedUser.email = trimmedEmail;
-      }
-      setStudent(authenticatedUser);
-      return { success: true };
-    }
-
-    // Default generic login defaults to student role
-    const genericUser: User = {
-      id: `usr-${Date.now()}`,
-      name: displayNameFromLogin(trimmedEmail),
+    const result = await recruiterSignIn(password, trimmedEmail);
+    if ("error" in result) return { success: false, error: result.error };
+    setRecruiter({
+      id: result.recruiter_id,
+      name: displayNameFromLogin(result.recruiter_id),
       email: trimmedEmail,
-      role: "student",
-      title: "Student Candidate",
-      organization: "Applicant",
-    };
-    setStudent(genericUser);
+      role: "recruiter",
+      title: "Recruiter",
+      organization: "",
+      readOnly: result.read_only,
+    });
     return { success: true };
   };
 
-  /** Opening recruiter access asks for server-validated credentials; it never grants a local role. */
-  const switchRole = async (newRole: UserRole) => {
-    const profile = DEMO_PROFILES[newRole];
-    if (newRole !== "recruiter") {
-      setStudent(profile.user);
-      return;
-    }
-    void api.recruiterLogout();
-    setUser(null);
-    setAuthError("Sign in with the configured recruiter account to continue.");
+  const switchRole = async (_newRole: UserRole) => {
+    setAuthError("");
     setIsLoginModalOpen(true);
   };
 
@@ -207,8 +157,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authError,
         openLoginModal: () => setIsLoginModalOpen(true),
         closeLoginModal: () => {
-          // Round 3: a first-time visitor must be able to reach the Create form without
-          // signing in; the demo gate stays as an auto-open modal but is now dismissible.
           try {
             sessionStorage.setItem(LOGIN_DISMISSED_KEY, "1");
           } catch {

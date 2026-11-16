@@ -41,7 +41,7 @@ function LatestPassportRedirect({ view }: { view: "passport" | "recruiter" }) {
   if (loading) return <div className="page-message">Loading latest passport…</div>;
   if (error) return <div className="notice notice-error">{error}</div>;
   if (!passportId) {
-    return <div className="page-message">{view === "passport" ? "No passport in this browser session." : "No passports yet."} <Link to="/">Create one first.</Link></div>;
+    return <div className="page-message">{view === "passport" ? <>No passport in this browser session. <Link to="/">Create your passport.</Link></> : "No candidates yet. Candidates appear after students create their own passports."}</div>;
   }
   return <Navigate replace to={`/${view}/${passportId}`} />;
 }
@@ -124,6 +124,7 @@ function AppContent() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
         <div className="topbar-left">
           <Link className="brand" to="/">
@@ -132,13 +133,13 @@ function AppContent() {
           </Link>
 
           <nav aria-label="Primary navigation">
-            <NavLink to="/" end>Create</NavLink>
-            <NavLink
+            {role !== "recruiter" && <NavLink to="/" end>Create</NavLink>}
+            {role !== "recruiter" && <NavLink
               to="/student"
               className={({ isActive }) => isActive || location.pathname.startsWith("/passport/") ? "active" : undefined}
             >
-              Student
-            </NavLink>
+              My passport
+            </NavLink>}
             {/* Recruiter and Placement Cell visible only to Recruiter role */}
             {role === "recruiter" && (
               <>
@@ -163,7 +164,7 @@ function AppContent() {
                 )}
                 <span className="auth-role-name">
                   <strong>{user.role === "recruiter" ? "Recruiter" : "Student"}:</strong> {user.name.split(" ")[0]}
-                  <span className="demo-badge">DEMO DATA</span>
+
                 </span>
               </div>
 
@@ -194,13 +195,13 @@ function AppContent() {
               onClick={openLoginModal}
             >
               <LogIn size={15} />
-              <span>Sign In</span>
+              <span>Recruiter sign-in</span>
             </button>
           )}
         </div>
       </header>
 
-      {generationJob && (generationJob.status === "queued" || generationJob.status === "running") && location.pathname !== "/" && (
+      {role !== "recruiter" && generationJob && (generationJob.status === "queued" || generationJob.status === "running") && location.pathname !== "/" && (
         <div className="generation-notice" role="status" aria-live="polite">
           <span>{pollingPaused ? "Passport status check paused" : `Passport generation continues • ${generationJob.step === "Queued" ? "Preparing your evidence…" : generationJob.step}`}</span>
           {pollingPaused && <button type="button" className="link-button" onClick={() => { setGenerationError(""); setPollingPaused(false); }}>Retry status check</button>}
@@ -208,25 +209,25 @@ function AppContent() {
           {generationError && <small>{generationError}</small>}
         </div>
       )}
-      {generationJob?.status === "done" && generationJob.passport_id && location.pathname !== "/" && location.pathname !== `/passport/${generationJob.passport_id}` && dismissedCompletionId !== generationJob.job_id && (
+      {role !== "recruiter" && generationJob?.status === "done" && generationJob.passport_id && location.pathname !== "/" && location.pathname !== `/passport/${generationJob.passport_id}` && dismissedCompletionId !== generationJob.job_id && (
         <div className="generation-notice generation-complete" role="status">
           <span>Your passport is ready.</span><Link to={`/passport/${generationJob.passport_id}`}>View passport</Link>
           <button type="button" className="link-button" onClick={() => setDismissedCompletionId(generationJob.job_id)}>Dismiss</button>
         </div>
       )}
-      {generationJob?.status === "failed" && location.pathname !== "/" && (
+      {role !== "recruiter" && generationJob?.status === "failed" && location.pathname !== "/" && (
         <div className="generation-notice generation-failed" role="alert">
           <span>{generationError || generationJob.error || "Passport generation failed."}</span><Link to="/">Try again</Link>
         </div>
       )}
 
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <Routes>
           {/* Accessible to both Student and Recruiter */}
           <Route
             path="/"
             element={
-              <CreatePassport
+              role === "recruiter" ? <Navigate replace to="/recruiter" /> : <CreatePassport
                 job={generationJob}
                 pollingPaused={pollingPaused}
                 generationError={generationError}

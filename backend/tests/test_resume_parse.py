@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services import resume_parse
 from app.services.resume_parse import match_resume_skills, parse_resume, redact_personal_data
 
-SAMPLES = Path(__file__).resolve().parents[2] / "samples"
+SAMPLES = Path(__file__).resolve().parent / "fixtures" / "resumes"
 
 
 @pytest.mark.parametrize(

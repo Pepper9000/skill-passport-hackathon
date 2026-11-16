@@ -391,36 +391,20 @@ def _save_passport(connection: sqlite3.Connection, passport: dict[str, Any]) -> 
     )
 
 
-def save_trusted_demo_passport(passport: dict[str, Any]) -> None:
-    """Persist a curated demo passport and register it as trusted server-side sample data.
-
-    This function is for backend-controlled seeding only; request handlers must use the regular
-    save functions and must never register a passport as trusted demo data.
-    """
+def purge_legacy_seeded_passports() -> None:
+    """Remove only records registered by the retired fixture seeder, atomically."""
     initialize_storage()
-    if not passport.get("id"):
-        raise ValueError("A trusted demo passport must have an id.")
-    trusted_passport = {**passport, "is_demo": True}
     with _connect() as connection:
-        connection.execute("BEGIN IMMEDIATE;")
-        existing = connection.execute(
-            "SELECT 1 FROM passports WHERE id = ?", (trusted_passport["id"],)
-        ).fetchone()
-        if existing:
-            trusted = connection.execute(
-                "SELECT 1 FROM trusted_demo_passports WHERE passport_id = ?",
-                (trusted_passport["id"],),
-            ).fetchone()
-            if trusted:
-                return
-            raise ValueError(
-                f"Refusing to trust an existing non-demo passport: {trusted_passport['id']}."
-            )
-        _save_passport(connection, trusted_passport)
-        connection.execute(
-            "INSERT INTO trusted_demo_passports (passport_id) VALUES (?)",
-            (trusted_passport["id"],),
-        )
+        connection.execute("BEGIN IMMEDIATE")
+        ids = [row[0] for row in connection.execute("SELECT passport_id FROM trusted_demo_passports")]
+        for passport_id in ids:
+            # All related rows with a passport_id belong to these registered fixtures.
+            for table in ("passport_owners", "review_requests", "evidence_requests", "evidence_reviews", "interview_sessions", "jobs"):
+                columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if "passport_id" in columns:
+                    connection.execute(f"DELETE FROM {table} WHERE passport_id = ?", (passport_id,))
+            connection.execute("DELETE FROM passports WHERE id = ?", (passport_id,))
+        connection.execute("DELETE FROM trusted_demo_passports")
 
 
 def _deserialize_passport(payload: str, is_demo: bool) -> dict[str, Any]:

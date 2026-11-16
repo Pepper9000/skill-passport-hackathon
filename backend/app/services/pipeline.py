@@ -375,13 +375,13 @@ def build_passport(
         "role_match": role_match,
         "growth_tasks": generated["growth_tasks"],
         "interview_kit": generated["interview_kit"],
-        "is_demo": is_demo or bool(existing and existing.get("is_demo")),
+        "is_demo": False,
         # Recruiter-only; student_view() removes it. Ownership counts only for a proof recorded
         # against this passport's own creation.
         "identity": identity_signals(
             new_passport_id,
             ingestion["username"],
-            is_demo or bool(existing and existing.get("is_demo")),
+            False,
             resume_logins,
             (existing or {}).get("identity"),
         ),

@@ -1,17 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  ArrowRight,
-  BriefcaseBusiness,
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  GraduationCap,
-  Lock,
-  Mail,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-import { DEMO_PROFILES, useAuth, type UserRole } from "../auth";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, X } from "lucide-react";
+import { useAuth } from "../auth";
 
 export default function LoginModal() {
   const { user, isLoginModalOpen, closeLoginModal, login, authError } = useAuth();
@@ -20,8 +9,6 @@ export default function LoginModal() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [lastAutoFilledRole, setLastAutoFilledRole] = useState<UserRole | null>(null);
-  const [isPulsing, setIsPulsing] = useState(false);
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -32,7 +19,10 @@ export default function LoginModal() {
     if (!isLoginModalOpen) return;
     previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     emailInputRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const trapFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { closeLoginModal(); return; }
       if (event.key !== "Tab" || !dialogRef.current) return;
       const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
         'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -54,6 +44,7 @@ export default function LoginModal() {
     };
     document.addEventListener("keydown", trapFocus);
     return () => {
+      document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", trapFocus);
       previousFocusRef.current?.focus();
     };
@@ -64,13 +55,12 @@ export default function LoginModal() {
     if (isLoginModalOpen) {
       if (user) {
         setEmail(user.email);
-        setPassword(user.role === "recruiter" ? "" : "student2026");
+        setPassword("");
       } else {
         setEmail("");
         setPassword("");
       }
       setErrorMessage(authError);
-      setLastAutoFilledRole(null);
     }
   }, [isLoginModalOpen, user, authError]);
 
@@ -90,23 +80,6 @@ export default function LoginModal() {
     }
   };
 
-  const handleAutoFill = (role: UserRole) => {
-    const profile = DEMO_PROFILES[role];
-    setEmail(profile.user.email);
-    setPassword(profile.passwordHint ?? "");
-    setLastAutoFilledRole(role);
-    setErrorMessage("");
-
-    // Trigger visual pulse effect on input fields
-    setIsPulsing(true);
-    setTimeout(() => setIsPulsing(false), 900);
-
-    // Focus the submit/enter button so user can press Enter immediately
-    setTimeout(() => {
-      submitButtonRef.current?.focus();
-    }, 100);
-  };
-
   return (
     <div className="auth-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
       <div className="auth-modal-card" ref={dialogRef} tabIndex={-1}>
@@ -123,22 +96,11 @@ export default function LoginModal() {
           <div className="auth-modal-brand-badge">
             <ShieldCheck size={28} />
           </div>
-          <h2 id="auth-modal-title">Demo sign-in</h2>
+          <h2 id="auth-modal-title">Recruiter sign-in</h2>
           <p className="auth-modal-subtitle">
-            This demo switches between sample Student and Recruiter views. Recruiter sign-in is checked by the server; student profiles are samples, not real accounts.
+            Use the account name and access key provided by your administrator. Students can create and view their own passport without signing in.
           </p>
         </div>
-
-        <section className="auth-demo-credentials" aria-label="Recruiter Demo Credentials">
-          <div className="auth-demo-credentials-heading">
-            <h3>Recruiter Demo Credentials</h3>
-            <span>{DEMO_PROFILES.recruiter.badge}</span>
-          </div>
-          <dl>
-            <div><dt>Username</dt><dd>{DEMO_PROFILES.recruiter.user.email}</dd></div>
-            <div><dt>Password</dt><dd>{DEMO_PROFILES.recruiter.passwordHint}</dd></div>
-          </dl>
-        </section>
 
         {errorMessage && (
           <div className="notice notice-error auth-modal-alert" role="alert">
@@ -146,27 +108,16 @@ export default function LoginModal() {
           </div>
         )}
 
-        {lastAutoFilledRole && (
-          <div className="auth-autofill-hint" role="status">
-            <CheckCircle2 size={15} />
-            <span>
-              {lastAutoFilledRole === "recruiter"
-                ? <><strong>Demo recruiter credentials</strong> filled. Click <strong>Sign in</strong> to continue.</>
-                : <><strong>Student</strong> filled. Press <strong>Sign in</strong> to continue.</>}
-            </span>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="auth-form">
-          <div className={`auth-field ${isPulsing ? "auth-field-pulse" : ""}`}>
-            <label htmlFor="auth-email">Email or Username</label>
+          <div className="auth-field">
+            <label htmlFor="auth-email">Account name</label>
             <div className="auth-input-wrapper">
               <Mail className="auth-input-icon" size={17} />
               <input
                 id="auth-email"
                 ref={emailInputRef}
                 type="text"
-                placeholder="e.g. recruiter@techcorp.com or student@university.edu"
+                placeholder="Your recruiter account name"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -178,7 +129,7 @@ export default function LoginModal() {
             </div>
           </div>
 
-          <div className={`auth-field ${isPulsing ? "auth-field-pulse" : ""}`}>
+          <div className="auth-field">
             <div className="auth-field-header">
               <label htmlFor="auth-password">Password</label>
             </div>
@@ -200,7 +151,7 @@ export default function LoginModal() {
                 type="button"
                 className="auth-password-toggle"
                 onClick={() => setShowPassword(!showPassword)}
-                title={showPassword ? "Hide password" : "Show password"}
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -214,57 +165,12 @@ export default function LoginModal() {
             id="auth-submit-btn"
             disabled={submitting}
           >
-            <span>Sign in</span>
+            <span>{submitting ? "Signing in…" : "Sign in"}</span>
             <ArrowRight size={16} />
           </button>
         </form>
 
-        <div className="auth-divider">
-          <span>Or use a demo profile</span>
-        </div>
-
-        <div className="auth-demo-options">
-          {/* Recruiter demo option */}
-          <button
-            type="button"
-            className={`auth-demo-card ${lastAutoFilledRole === "recruiter" ? "auth-demo-card-selected" : ""}`}
-            onClick={() => handleAutoFill("recruiter")}
-            id="demo-fill-recruiter"
-          >
-            <div className="auth-demo-card-head">
-              <div className="auth-demo-icon recruiter">
-                <BriefcaseBusiness size={18} />
-              </div>
-              <div className="auth-demo-info">
-                <div className="auth-demo-title-row">
-                  <span className="auth-demo-title">Recruiter</span>
-                </div>
-                <span className="auth-demo-meta">All views, including Placement Cell</span>
-              </div>
-            </div>
-          </button>
-
-          {/* Student demo option */}
-          <button
-            type="button"
-            className={`auth-demo-card ${lastAutoFilledRole === "student" ? "auth-demo-card-selected" : ""}`}
-            onClick={() => handleAutoFill("student")}
-            id="demo-fill-student"
-          >
-            <div className="auth-demo-card-head">
-              <div className="auth-demo-icon student">
-                <GraduationCap size={18} />
-              </div>
-              <div className="auth-demo-info">
-                <div className="auth-demo-title-row">
-                  <span className="auth-demo-title">Student</span>
-                </div>
-                <span className="auth-demo-meta">Create and view a passport</span>
-              </div>
-            </div>
-          </button>
-        </div>
-
+        <p className="muted">Creating a passport? <button type="button" className="link-button" onClick={closeLoginModal}>Continue as a student</button></p>
       </div>
     </div>
   );

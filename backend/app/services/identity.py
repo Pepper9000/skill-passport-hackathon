@@ -3,7 +3,7 @@
 Every other check shows that code was written by a GitHub account; none shows that the person
 applying controls that account, so anyone could submit a well-known developer's username. The
 applicant proves control by publishing a public gist whose description is a one-time code issued
-here (no OAuth app needed). For non-demo passports this is a hard gate before the job starts.
+here (no OAuth app needed). For passports this is a hard gate before the job starts.
 A successful proof is recorded against the one passport whose creation it authorised, so a proof
 for a username never makes another passport for that username show as proven.
 
@@ -254,11 +254,6 @@ def _signal(signal_id: str, label: str, status: str, detail: str) -> dict[str, s
 
 def ownership_signal(passport_id: str, github_username: str, is_demo: bool) -> dict[str, str]:
     """ok only when this passport's own creation was authorised by a proof for this account."""
-    if is_demo:
-        return _signal(
-            "account_ownership", OWNERSHIP_LABEL, "unknown",
-            "Demo passport (DEMO DATA); account ownership is not checked.",
-        )
     proof = ownership_for_passport(passport_id)
     if proof and _same_login(proof["github_username"], github_username):
         return {

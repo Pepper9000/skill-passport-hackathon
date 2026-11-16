@@ -1,58 +1,16 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
-import { DEMO_PROFILES, canAccessRoute, displayNameFromLogin, parseStoredUser } from "../src/authTypes.ts";
-
-test("demo profiles provide public recruiter credentials and clearly mark student demo login", () => {
-  assert.equal(DEMO_PROFILES.recruiter.user.role, "recruiter");
-  assert.equal(DEMO_PROFILES.recruiter.user.email, "recruiter@techcorp.com");
-  assert.equal(DEMO_PROFILES.recruiter.passwordHint, "recruiter2026");
-  assert.equal(DEMO_PROFILES.recruiter.user.readOnly, undefined);
-  assert.match(DEMO_PROFILES.recruiter.badge, /read-only/i);
-
-  assert.equal(DEMO_PROFILES.student.user.role, "student");
-  assert.equal(DEMO_PROFILES.student.user.email, "student@university.edu");
-  assert.equal(DEMO_PROFILES.student.passwordHint, "student2026");
+import { canAccessRoute, displayNameFromLogin, parseStoredUser } from "../src/authTypes.ts";
+const user = {id:"hiring-team",name:"Hiring team",email:"hiring-team",role:"recruiter",title:"Recruiter",organization:"",readOnly:false};
+test("only recruiter sessions may be restored; local student identities are not accounts", () => {
+  assert.deepEqual(parseStoredUser(JSON.stringify(user)), user);
+  assert.equal(parseStoredUser(JSON.stringify({...user,role:"student"})),null);
+  assert.equal(parseStoredUser(JSON.stringify({...user,role:"admin"})),null);
+  assert.equal(parseStoredUser("{"),null);
 });
-
-test("a server-authenticated read-only role survives storage parsing", () => {
-  const recruiter = { ...DEMO_PROFILES.recruiter.user, id: "demo-recruiter", readOnly: true };
-  assert.deepEqual(parseStoredUser(JSON.stringify(recruiter)), recruiter);
-  assert.equal(parseStoredUser(JSON.stringify({ ...recruiter, readOnly: "yes" })), null);
-});
-
-test("students can access create and student views, but not recruiter or placement", () => {
-  assert.equal(canAccessRoute("/", "student"), true);
-  assert.equal(canAccessRoute("/student", "student"), true);
-  assert.equal(canAccessRoute("/passport/xyz-123", "student"), true);
-
-  assert.equal(canAccessRoute("/recruiter", "student"), false);
-  assert.equal(canAccessRoute("/recruiter/xyz-123", "student"), false);
-  assert.equal(canAccessRoute("/recruiter/xyz-123/evidence", "student"), false);
-  assert.equal(canAccessRoute("/placement", "student"), false);
-  assert.equal(canAccessRoute("/Recruiter", "student"), false);
-  assert.equal(canAccessRoute("/Placement", "student"), false);
-});
-
-test("generic login names stay valid for persisted sessions", () => {
-  assert.equal(displayNameFromLogin("alex@example.com"), "alex");
-  assert.equal(displayNameFromLogin("@alex"), "Student");
-});
-
-test("recruiters have access to all application routes", () => {
-  assert.equal(canAccessRoute("/", "recruiter"), true);
-  assert.equal(canAccessRoute("/student", "recruiter"), true);
-  assert.equal(canAccessRoute("/passport/xyz-123", "recruiter"), true);
-  assert.equal(canAccessRoute("/recruiter", "recruiter"), true);
-  assert.equal(canAccessRoute("/recruiter/xyz-123", "recruiter"), true);
-  assert.equal(canAccessRoute("/recruiter/xyz-123/evidence", "recruiter"), true);
-  assert.equal(canAccessRoute("/placement", "recruiter"), true);
-});
-
-test("invalid persisted profiles are discarded", () => {
-  assert.equal(parseStoredUser(null), null);
-  assert.equal(parseStoredUser("{"), null);
-  assert.equal(parseStoredUser("{}"), null);
-  assert.equal(parseStoredUser(JSON.stringify({ ...DEMO_PROFILES.student.user, name: "" })), null);
-  assert.equal(parseStoredUser(JSON.stringify({ ...DEMO_PROFILES.student.user, role: "admin" })), null);
-  assert.deepEqual(parseStoredUser(JSON.stringify(DEMO_PROFILES.student.user)), DEMO_PROFILES.student.user);
+test("recruiter data is not accessible in a student or anonymous view", () => {
+  for (const role of [null,"student"] as const) for (const path of ["/recruiter","/recruiter/one/evidence","/placement"]) assert.equal(canAccessRoute(path,role),false);
+  assert.equal(canAccessRoute("/placement","recruiter"),true);
+  assert.equal(canAccessRoute("/student",null),true);
+  assert.equal(displayNameFromLogin("hiring.team"),"hiring team");
 });

@@ -1,6 +1,6 @@
 # Skill Passport
 
-Skill Passport builds an evidence-backed skills profile from public GitHub work and a resume PDF. AI may propose citations, but deterministic checks decide which citations are verified. Levels show evidence of use in the candidate's code, not how well a skill is used. Passports marked **DEMO DATA** use fictional resumes.
+Skill Passport builds an evidence-backed skills profile from public GitHub work and a resume PDF. AI may propose citations, but deterministic checks decide which citations are verified. Levels show evidence of use in the candidate's code, not how well a skill is used.
 
 ## Run locally (Windows)
 
@@ -18,7 +18,7 @@ HTTPS to GitHub uses the Windows certificate store (via `truststore`), so it als
 
 Always activate this `backend\.venv` before installing or running; packages installed into another Python (or the old `.venv` in the project root) won't be seen by the server. Check with `python -c "import httpx, truststore"`.
 
-`backend/.env` must contain `GITHUB_TOKEN` and `GEMINI_MODEL`; `GEMINI_API_KEY` is optional because passport generation falls back to extracted document skill mentions when AI proposals are unavailable. The fallback never verifies skills or invents repository evidence. The GitHub token remains required in production for repository ingestion and applicant ownership checks; without it those required workflows would be rate-limited or unavailable. Gemini-backed growth/interview features may be unavailable without the key. Set `APP_ENV=development` explicitly for local use. Production recruiter access supports individual named keys in `RECRUITER_ACCOUNTS` (a JSON object with distinct secrets of at least 32 characters) and a separate read-only demo account. The sign-in screen displays the public demo credentials; configure `DEMO_RECRUITER_USERNAME=recruiter@techcorp.com` and `DEMO_RECRUITER_PASSWORD=recruiter2026` to enable them. The demo recruiter can read only passports registered in the backend's `trusted_demo_passports` table by the internal `save_trusted_demo_passport` seeding function; the client-supplied `is_demo` field is ignored and cannot register a passport. Only curated fictional sample data may be seeded there. Demo accounts cannot re-check passports, create or assess interview sets, or update review requests. The known public password must not be used for a privileged recruiter account. At least one of `RECRUITER_ACCOUNTS` or `DEMO_RECRUITER_PASSWORD` is required in production. Standard recruiters retain full permissions. The deprecated single `RECRUITER_KEY` is accepted only in local development. Marking a review records the recruiter's name in the review-request audit trail. `FRONTEND_ORIGINS` is a comma-separated allowlist of exact frontend origins; it defaults to `http://localhost:5173`, so add the current Vercel origin when deploying. A trailing slash is normalized, but wildcard origins are rejected. Debug endpoints are disabled unless `ALLOW_DEBUG_ENDPOINTS=true` is explicitly set. Passport creation returns an owner access token that the creating browser tab keeps in session storage; it is required for job polling, review requests and passport re-checks. The API rejects request bodies larger than 26 MB before multipart parsing; configure the deployment's reverse proxy or hosting platform with a matching or smaller request-body limit. The existing `.env` is ignored by Git; do not replace it with `.env.example`. The current Gemini model setting is `gemini-flash-latest`.
+`backend/.env` must contain `GITHUB_TOKEN` and `GEMINI_MODEL`; `GEMINI_API_KEY` is optional because passport generation falls back to extracted document skill mentions when AI proposals are unavailable. The fallback never verifies skills or invents repository evidence. The GitHub token remains required in production for repository ingestion and applicant ownership checks; without it those required workflows would be rate-limited or unavailable. Gemini-backed growth/interview features may be unavailable without the key. Set `APP_ENV=development` explicitly for local use. Production recruiter access requires individual named keys in `RECRUITER_ACCOUNTS` (a JSON object with distinct secrets of at least 32 characters). Recruiters use their configured account name and key; no shared public account is provided. The deprecated single `RECRUITER_KEY` is accepted only in local development. Marking a review records the recruiter's name in the review-request audit trail. `FRONTEND_ORIGINS` is a comma-separated allowlist of exact frontend origins; it defaults to `http://localhost:5173`, so add the current Vercel origin when deploying. A trailing slash is normalized, but wildcard origins are rejected. Debug endpoints are disabled unless `ALLOW_DEBUG_ENDPOINTS=true` is explicitly set. Passport creation returns an owner access token that the creating browser tab keeps in session storage; it is required for job polling, review requests and passport re-checks. The API rejects request bodies larger than 26 MB before multipart parsing; configure the deployment's reverse proxy or hosting platform with a matching or smaller request-body limit. The existing `.env` is ignored by Git; do not replace it with `.env.example`. The current Gemini model setting is `gemini-flash-latest`.
 
 Certificates are optional: upload up to five PDF, PNG or JPEG files (10 MB each, 25 MB total with the resume). Text PDFs are extracted locally; scanned PDF pages and images are processed by local Tesseract OCR on the backend, and no original certificate file is retained after the generation job. Install the [Tesseract executable](https://tesseract-ocr.github.io/tessdoc/Installation.html) on the backend host and make sure `tesseract` is on `PATH` (for local Windows development, install Tesseract and reopen the terminal; on Debian/Ubuntu hosts, install the `tesseract-ocr` package). No Google Cloud API, billing account or credentials are needed for OCR. Scanned certificate PDFs are limited to 10 OCR pages each. You can select several files at once or add more in a later selection; selected files are listed so you can remove one before submitting.
 
@@ -36,7 +36,7 @@ npm run dev
 
 Production frontend builds require `VITE_API_BASE_URL` to be set to the HTTPS base URL of the deployed backend (for example, in the Vercel project’s Environment Variables). Set Vercel’s root directory to `frontend`, build command to `npm run build`, and output directory to `dist`. The localhost default applies only to Vite development; a production build without this setting reports a configuration error instead of sending API calls to the visitor’s own computer. After changing this variable, redeploy the frontend so Vite rebuilds the bundle.
 
-For Railway, set the backend service root directory to `backend` and start command to `python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Mount one persistent volume and set `DATA_DIR` to its mount path. Set `APP_ENV=production`, `GITHUB_TOKEN`, optional `GEMINI_API_KEY`, `DEMO_RECRUITER_USERNAME=recruiter@techcorp.com`, `DEMO_RECRUITER_PASSWORD=recruiter2026`, `RECRUITER_ACCOUNTS` (a JSON object of named 32+ character secrets, or `{}` when none are configured), `DATA_DIR`, and `FRONTEND_ORIGINS` to the exact deployed Vercel origin. If there are no named recruiter accounts, the demo password is sufficient to start but remains read-only. The demo account can view only backend-registered trusted demo passports; setting a request field or stored JSON marker is not sufficient. Changing the start command, environment variables, or persistent-volume configuration requires a Railway restart or redeploy; changing `FRONTEND_ORIGINS` requires a backend restart/redeploy.
+For Railway, set the backend service root directory to `backend` and start command to `python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Mount one persistent volume and set `DATA_DIR` to its mount path. Set `APP_ENV=production`, a valid `GITHUB_TOKEN`, optional `GEMINI_API_KEY`, `RECRUITER_ACCOUNTS` (a JSON object of individually named 32+ character secrets), and `FRONTEND_ORIGINS` to the exact deployed frontend origin. Restart the backend after configuration changes. Configure `VITE_API_BASE_URL` on Vercel to the reachable HTTPS backend origin, then rebuild the frontend. `/health` checks process health; `/ready` checks storage. Both must succeed before release.
 
 ## Screens and API
 
@@ -51,7 +51,6 @@ For Railway, set the backend service root directory to `backend` and start comma
 
 Recruiter cohort list endpoints return at most 50 passports by default and support `limit` (1–100) and `offset` query parameters. The Placement Cell loads more on demand; its current CSV export covers the passports loaded in the page.
 
-Three fictional resume PDFs for local demonstrations are in `samples/`. Each includes a visible `DEMO DATA` label. Uploading one creates an ordinary student passport; only a curated sample passport seeded server-side with `save_trusted_demo_passport` is visible to the public demo recruiter.
 
 ## Reading a passport
 
@@ -70,7 +69,7 @@ Three fictional resume PDFs for local demonstrations are in `samples/`. Each inc
 
 ## Recruiter sign-in and interview kit
 
-The sign-in modal's recruiter profile is checked by the server. The password or a named recruiter key goes to `POST /auth/recruiter/login`; only a successful response gives the recruiter role. The public demo password is intentionally displayed in the frontend and must match the backend `DEMO_RECRUITER_PASSWORD` configuration. For local development, set `RECRUITER_KEY` or `DEMO_RECRUITER_PASSWORD` in `backend/.env`. In production, use the displayed read-only demo credentials; normal recruiters use `RECRUITER_ACCOUNTS` and retain their existing permissions. The browser keeps an 8-hour session token, never the password. An expired or revoked session reopens the sign-in modal. If no recruiter key is configured in development, recruiter routes stay open as before. Student profiles are client-side demo state, not secure or persistent student authentication; a student's passport, **Practice questions** and Re-check work from the browser session that created the passport.
+Recruiter sign-in exchanges a configured account name and key at `POST /auth/recruiter/login` for an 8-hour server-validated session token, never a locally guessed role. Expired or revoked sessions require sign-in again. Students do not have password accounts: their passport access token is held in the creating browser's session storage. Keep that tab/session available for private actions and re-checks. Local development can use `RECRUITER_KEY`; production must use individually named `RECRUITER_ACCOUNTS`. On upgrade, startup removes only passports registered by the retired backend fixture seeder and their associated records. Ordinary user passports are preserved.
 
 The Create Passport form accepts one optional public Gist URL in addition to public repositories. It must be a `gist.github.com` URL belonging to the submitted GitHub account. The server reads supported source files from the Gist's current revision and only includes them as authored code evidence when the latest revision is attributable to that account. Gists remain separate from repository count; they do not supply Git history, dependency/config evidence, or known blame data.
 
@@ -100,51 +99,9 @@ backend\.venv\Scripts\python.exe backend\scripts\recheck_all.py
 
 It prints one line per passport (username, requirements met before → after, and rejected and excluded claim counts). A passport that fails, for example on a GitHub rate limit, is reported and left unchanged. Each passport makes live GitHub and Gemini calls, so expect about a minute per passport.
 
-## Authorship checks demo
+## Authorship checks
 
-This shows the checks on three kinds of repository. Students never see the advisory signals: `GET /passport/{id}` is student-safe, and the signals appear only on the recruiter pages, which use `/passport/{id}/review`. Students do see any citation that wasn't counted, and can request a review.
-
-**What is checked.** Only an **earlier public source** is excluded automatically. That requires two conditions: two different cited lines are in the same file in another owner's repository, and that file's first commit there is more than a day before the first commit of the candidate's file. File-level dates are compared, not repository creation dates. If either date is unknown, it stays a warning. An exclusion means "can't attribute to the candidate", not "copied"; it may be legitimate reuse.
-
-Everything else is an advisory signal for a human to judge: line authorship, file creator, bulk upload, commit count, AI chat text, one-line code matches, commit spread, and history dated before the repository existed. Dependency and config files only count towards "Used" if the student committed to them.
-
-### Setup
-
-1. Use a spare GitHub account. A passport reads the account's **5 most recently pushed** non-fork repositories, so all three demo repos appear in one passport and their signals show up per repository. Never use a real student's account or personal documents in a demo passport.
-2. `backend/.env` must contain a `GITHUB_TOKEN`. Line authorship (GraphQL blame) and code search don't work without one, and those signals then show as "not checked".
-3. Create the three repositories below, then generate a passport for the account in the Create screen with a resume from `samples/`. This creates a normal private passport. To make a curated fictional sample visible to the public demo recruiter, seed that sample server-side with `save_trusted_demo_passport`; the browser cannot mark a passport as demo data.
-4. Open `/recruiter/{id}`, then the **Evidence** links (or `/recruiter/{id}/evidence`). After changing a repository, use **Re-check** on the student page; it bypasses the cache.
-
-### (a) Genuine
-
-A real project you built yourself: create the repository on GitHub first, then push several commits over several days, each touching the same source files.
-
-Expected: claims verify and the signals pass, giving **High** verifiability and **High** attribution in the evidence packets. Some signals may show "not checked" (for example, code search rate limits); that doesn't lower the tier. Add a test file named after a module (for example `tests/test_engine.py` for `engine.py`) to see that skill become **Demonstrated**.
-
-### (b) Clone with history
-
-Clone a popular public repository (`git clone`), create a **new empty repository** (not a fork), and push the clone with its full history. Then make at least 3 small commits of your own that edit existing source files, dated before today, to simulate imported or backdated history (`git commit --date="2023-03-01T10:00"`), and push.
-
-Expected:
-- Evidence panel: "Your share of this file's commits … it was created by <original author>" and "Cited lines written by you" warnings.
-- **History matches when the repository was created**: warns, because your commits are dated before GitHub created the repository. The wording stays neutral, because honest students sometimes build locally before pushing.
-- Attribution in the evidence packets is **Medium** or **Low**.
-- Because the clone keeps the original history, each file's first commit is the original author's, and it isn't earlier than "your" file's first commit (which is the same commit). So it is normally **not** excluded as an earlier source; the advisory warnings above are what flag it.
-
-`history_import` looks only at *your* commits. A plain clone with no commits by you produces no code evidence at all: the files fail the "authored" check and appear only as rejected AI claims.
-
-### (c) Copy-paste dump
-
-Copy source code from a popular public repository (at least 15 source files, and at least 20 files or 2,000 lines in total) into a **new** repository, and push it as one "Initial commit".
-
-Expected:
-- **Built up over several commits**: warns (bulk upload, never edited afterwards).
-- **Work spread over time**: warns ("All 1 of your commits in this repository were made on one day …").
-- **Earlier public source**: the cited file in the original repository first appeared years before your "Initial commit", and two cited lines match. The citation is removed from the skill, its level is recalculated, and it appears under "Rejected and excluded claims" with "Matches code that appeared in {repo} on {date}, before this file's first commit here ({date})…" and a **View earlier source** link.
-- Verifiability is **Low**, the recruiter header shows "N citations matched earlier public sources", and the student ranks lower in the Placement Cell.
-- The student page lists each citation that wasn't counted (file, lines, links to their lines and the earlier source) with a **Request review** button. The note they send shows on the recruiter evidence page with **Mark reviewed**, and the recruiter header shows "N open review requests".
-
-Code search skips lines that appear in more than 50 repositories (too common to judge), so a heavily cloned project may show "not checked" instead of an earlier source. A less-cloned public repository works more reliably. If the matching file was renamed in the original repository, its first-appearance date can't be found, and the match stays a warning.
+Student views exclude recruiter-only identity signals, evaluation details and answer guides. Recruiters use authenticated review endpoints. Citations matched to an earlier public source are excluded only when two cited lines match another owner's file and its first commit predates the candidate file by more than a day. Missing source dates remain warnings for human review, not automatic accusations. Unknown evidence means "not found in the analysed files", never that a candidate lacks a skill.
 
 ## Tests
 
@@ -153,10 +110,8 @@ From the project root:
 ```powershell
 backend\.venv\Scripts\python.exe -m pytest backend/tests -q
 cd frontend
-npm run build
 npm test
+npm run build
 ```
 
-`npm test` uses Node's built-in test runner (Node 22.18 or newer, which runs TypeScript directly).
-
-All GitHub and Gemini calls are mocked in the tests.
+Automated tests use isolated fixtures and mocked external APIs. Parser-only fictional PDFs live under `backend/tests/fixtures/resumes/`; they are never seeded or offered in the application. Real-browser testing must use a local backend and authorized account ownership proof.

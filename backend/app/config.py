@@ -92,7 +92,7 @@ TRUSTED_PROXY_IPS = frozenset(
 )
 # Bump whenever verification or level rules change; stored in every evidence record.
 VERIFIER_VERSION = "2026-10-24"
-# Non-demo passports need a public-gist proof that the applicant controls the GitHub account.
+# Passports need a public-gist proof that the applicant controls the GitHub account.
 # Only an explicit false value turns it off (development only, enforced at startup); an
 # unrecognised value keeps it on and makes startup fail, so a typo never disables the proof.
 _OWNERSHIP_PROOF_SETTING = (os.getenv("REQUIRE_OWNERSHIP_PROOF") or "true").strip().lower()
@@ -107,13 +107,6 @@ REQUIRE_RECRUITER_AUTH = (
 )
 # When set, the recruiter review endpoints require a matching X-Recruiter-Key header.
 RECRUITER_KEY = os.getenv("RECRUITER_KEY", "")
-# Optional public demo credentials. The account is read-only and never replaces
-# the individually configured production recruiter accounts above.
-DEMO_RECRUITER_USERNAME = (
-    os.getenv("DEMO_RECRUITER_USERNAME") or "recruiter@techcorp.com"
-).strip().lower()
-DEMO_RECRUITER_ID = "demo-recruiter"
-DEMO_RECRUITER_PASSWORD = os.getenv("DEMO_RECRUITER_PASSWORD", "").strip()
 # Production uses individually named keys so one recruiter can be revoked without rotating
 # everyone else's credential. Example: {"recruiter-a":"<random secret>", ...}.
 _RECRUITER_ACCOUNTS_RAW = os.getenv("RECRUITER_ACCOUNTS", "")

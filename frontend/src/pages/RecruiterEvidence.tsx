@@ -61,14 +61,14 @@ export default function RecruiterEvidence() {
       <header className="hero">
         <div className="hero-copy">
           <div className="hero-eyebrow">Evidence review · Not shown to the candidate</div>
-          <h1>{passport.github_username}{passport.is_demo && <span className="demo-badge">DEMO DATA</span>}</h1>
+          <h1>{passport.github_username}</h1>
           <p className="hero-sub"><span className="lead">Candidate for {passport.target_role}.</span>{" "}
             <span className={`verify-pill verify-${verify.tier.replace(" ", "-").toLowerCase()}`}>Verifiability: {verify.tier === "Not checked" ? "not checked" : `${verify.tier} · ${verify.passed} of ${verify.checked} checks`}</span>
             {verify.earlierSources > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {earlierSourcesText(verify.earlierSources)}</span>}
             {verify.notWritten > 0 && <span className="earlier-sources"><AlertTriangle size={11} /> {notWrittenText(verify.notWritten)}</span>}
           </p>
           <CoverageSummary coverage={passport.coverage} />
-          {user?.readOnly && <p className="notice notice-warning">Read-only demo recruiter preview. Review requests cannot be updated.</p>}
+
           <div className="hero-actions">
             <Link className="button button-light" to={`/recruiter/${passport.id}`}><ArrowLeft size={15} /> Recruiter summary</Link>
           </div>

@@ -3,72 +3,21 @@ import test from "node:test";
 import React from "react";
 import { act, create } from "react-test-renderer";
 import LoginModal from "../src/components/LoginModal";
-import { AuthProvider } from "../src/auth";
-
-test("clicking the recruiter demo fills both fields and leaves sign-in to the user", async () => {
-  const previousDocument = globalThis.document;
-  const previousHTMLElement = globalThis.HTMLElement;
-  Object.defineProperty(globalThis, "HTMLElement", {
-    configurable: true,
-    value: class HTMLElement {},
-  });
-  Object.defineProperty(globalThis, "document", {
-    configurable: true,
-    value: {
-      activeElement: null,
-      addEventListener() {},
-      removeEventListener() {},
-    },
-  });
-
-  let renderer: ReturnType<typeof create> | undefined;
-  try {
-    await act(async () => {
-      renderer = create(
-        <AuthProvider>
-          <LoginModal />
-        </AuthProvider>,
-      );
-    });
-
-    const credentials = renderer!.root.findByProps({ "aria-label": "Recruiter Demo Credentials" });
-    const visibleCredentials = credentials.findAll((node) => typeof node.type === "string")
-      .map((node) => node.children.join(""))
-      .join(" ");
-    assert.match(visibleCredentials, /recruiter@techcorp\.com/);
-    assert.match(visibleCredentials, /recruiter2026/);
-    assert.match(visibleCredentials, /Read-only recruiter preview/);
-
-    await act(async () => {
-      renderer!.root.findByProps({ id: "demo-fill-recruiter" }).props.onClick();
-    });
-
-    assert.equal(renderer.root.findByProps({ id: "auth-email" }).props.value, "recruiter@techcorp.com");
-    assert.equal(renderer.root.findByProps({ id: "auth-password" }).props.value, "recruiter2026");
-    assert.match(
-      renderer.root.findByProps({ role: "status" }).findAllByType("strong").map((node) => node.children.join("")).join(" "),
-      /Demo recruiter credentials.*Sign in/,
-    );
-    assert.match(
-      renderer.root.findByProps({ id: "demo-fill-recruiter" }).props.className,
-      /auth-demo-card-selected/,
-    );
-    assert.equal(renderer.root.findByProps({ id: "auth-submit-btn" }).props.disabled, false);
-  } finally {
-    if (renderer) {
-      await act(async () => {
-        renderer!.unmount();
-      });
-    }
-    if (previousDocument === undefined) {
-      delete (globalThis as { document?: Document }).document;
-    } else {
-      Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
-    }
-    if (previousHTMLElement === undefined) {
-      delete (globalThis as { HTMLElement?: typeof HTMLElement }).HTMLElement;
-    } else {
-      Object.defineProperty(globalThis, "HTMLElement", { configurable: true, value: previousHTMLElement });
-    }
-  }
+import { AuthProvider, useAuth } from "../src/auth";
+function OpenSignIn() { const {openLoginModal}=useAuth(); return <button onClick={openLoginModal}>Open</button>; }
+test("first visit is usable without a fabricated account; recruiter sign-in contains no public credentials", async () => {
+ const previous=globalThis.document;
+ const previousElement=globalThis.HTMLElement;
+ Object.defineProperty(globalThis,"HTMLElement",{configurable:true,value:class HTMLElement {}});
+ Object.defineProperty(globalThis,"document",{configurable:true,value:{activeElement:null,body:{style:{overflow:""}},addEventListener(){},removeEventListener(){}}});
+ let renderer:ReturnType<typeof create>;
+ try {
+  await act(async()=>{renderer=create(<AuthProvider><OpenSignIn/><LoginModal/></AuthProvider>);});
+  assert.equal(renderer!.root.findAllByProps({role:"dialog"}).length,0);
+  await act(async()=>{renderer!.root.findByType("button").props.onClick();});
+  const tree=JSON.stringify(renderer!.toJSON());
+  assert.match(tree,/Recruiter sign-in/);
+  assert.doesNotMatch(tree,/recruiter2026|student2026|techcorp|Demo|Jordan|Alex Vance/);
+  assert.equal(renderer!.root.findByProps({id:"auth-password"}).props.value,"");
+ } finally { await act(async()=>renderer?.unmount()); Object.defineProperty(globalThis,"document",{configurable:true,value:previous}); Object.defineProperty(globalThis,"HTMLElement",{configurable:true,value:previousElement}); }
 });

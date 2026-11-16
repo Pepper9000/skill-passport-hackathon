@@ -125,7 +125,6 @@ export default function PlacementCell() {
     };
   }).sort((left, right) => right.percent - left.percent);
   const topGap = gaps.find((gap) => gap.percent > 0);
-  const demoPresent = visiblePassports.some((passport) => passport.is_demo);
 
   const tabs = [
     { id: "candidates", label: "Candidates", icon: Users, count: ranked.length },
@@ -137,7 +136,6 @@ export default function PlacementCell() {
     const headers = [
       "Rank",
       "Candidate",
-      "Is Demo",
       "Must-Have Met",
       "Must-Have Total",
       "All Met",
@@ -156,7 +154,6 @@ export default function PlacementCell() {
         [
           idx + 1,
           `"${row.passport.github_username}"`,
-          row.passport.is_demo ? "Yes" : "No",
           row.mustMet,
           row.mustTotal,
           row.met,
@@ -188,7 +185,7 @@ export default function PlacementCell() {
         <div className="hero-copy">
           <div className="hero-eyebrow">Placement cell · Cohort view</div>
           <h1>Skills across your cohort</h1>
-          <p className="hero-sub"><span className="lead">See where students have proof and where a shared workshop can help.</span> Code-backed levels link to cited lines.{demoPresent ? " Demo passports are labelled." : ""}</p>
+          <p className="hero-sub"><span className="lead">See where students have proof and where a shared workshop can help.</span> Code-backed levels link to cited lines.</p>
         </div>
         <div className="hero-side">
           <section className="panel">
@@ -205,9 +202,7 @@ export default function PlacementCell() {
         <div className="fact"><span>Students</span><b>{visiblePassports.length}{loadedPassportCount < totalPassports ? ` · ${loadedPassportCount} of ${totalPassports} loaded` : ""}</b></div>
         <div className="fact"><span>Avg. requirements met</span><b>{avgMet} of {requirements.length}</b></div>
         <div className="fact"><span>Suggested workshop</span><b>{topGap ? `Build proof for ${topGap.skill}` : "Add passports to reveal gaps"}</b></div>
-        <div className="fact"><span>Demo passports</span><b>{demoPresent ? "Included, labelled" : "None"}</b></div>
       </div>
-      {demoPresent && <div className="demo-notice">DEMO DATA is included in this cohort view.</div>}
       {error && <div className="notice notice-error" role="alert">{error}<button type="button" className="link-button" onClick={() => void (retryLoadMore ? loadMore() : loadInitial())}>Retry</button></div>}
       {loading && <div className="page-message" role="status">Loading cohort insights…</div>}
       {!loading && loadedPassportCount < totalPassports && <p className="muted cohort-page-note">Role filters and exports cover the {loadedPassportCount} loaded passports so far.</p>}
@@ -237,7 +232,7 @@ export default function PlacementCell() {
                 <span className="stat-icon green"><Award size={18} /></span>
                 <div>
                   <small>Top candidate</small>
-                  <strong>{best.passport.github_username}{best.passport.is_demo && <em> DEMO DATA</em>}</strong>
+                  <strong>{best.passport.github_username}</strong>
                   <p>
                     Meets {best.mustMet} of {best.mustTotal} must-have and {best.met} of {requirements.length} total requirements; {best.codeMet} with code evidence (Applied or Demonstrated).{" "}
                     {best.verify.tier === "Not checked"
@@ -258,7 +253,7 @@ export default function PlacementCell() {
                 <tbody>{ranked.map((row, index) => (
                   <tr key={row.passport.id} className={index === 0 ? "rank-top" : ""}>
                     <td className="rank-number">{index + 1}</td>
-                    <td><Link to={`/recruiter/${row.passport.id}`}>{row.passport.github_username}</Link>{row.passport.is_demo && <small className="demo-tag">DEMO</small>}<div className="muted">{row.verify.codeSkills} code-backed skills</div>
+                    <td><Link to={`/recruiter/${row.passport.id}`}>{row.passport.github_username}</Link><div className="muted">{row.verify.codeSkills} code-backed skills</div>
                       {growthUnavailable(row.passport) && <div className="unavailable-note">{GROWTH_UNAVAILABLE}</div>}
                       {!row.passport.coverage && <div className="unavailable-note">{COVERAGE_MISSING}</div>}</td>
                     <td>{row.mustMet} of {row.mustTotal}</td>
@@ -294,7 +289,7 @@ export default function PlacementCell() {
                 <thead><tr><th>Student</th>{requirements.map((req) => <th key={req.skill_id}><SkillName item={req} /></th>)}</tr></thead>
                 <tbody>{rows.map(({ passport }) => (
                   <tr key={passport.id}>
-                    <td><Link to={`/recruiter/${passport.id}`}>{passport.github_username}{passport.is_demo && <small>DEMO</small>}</Link></td>
+                    <td><Link to={`/recruiter/${passport.id}`}>{passport.github_username}</Link></td>
                     {requirements.map((req) => {
                       const skill = passport.skills.find((item) => item.skill_id === req.skill_id);
                       const level = skill?.evidence.length ? skill.level : undefined;

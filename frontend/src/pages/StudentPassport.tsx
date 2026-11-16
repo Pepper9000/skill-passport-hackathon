@@ -164,11 +164,10 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
       <header className="hero">
         <div className="hero-copy">
           <div className="hero-eyebrow">Student passport · Created {new Date(passport.created_at).toLocaleDateString()}{passport.updated_at && passport.updated_at.slice(0, 10) !== passport.created_at.slice(0, 10) ? ` · Updated ${new Date(passport.updated_at).toLocaleDateString()}` : ""}</div>
-          <h1>@{passport.github_username}{passport.is_demo && <span className="demo-badge">DEMO DATA</span>}</h1>
+          <h1>@{passport.github_username}</h1>
           <p className="hero-sub"><span className="lead">Target role: {passport.target_role}.</span> GitHub: {passport.sources.repos} repos{passport.sources.gists ? ` · ${passport.sources.gists} public Gist${passport.sources.gists === 1 ? "" : "s"}` : ""} · Resume PDF · {passport.sources.certificates} certificates{passport.sources.reports ? ` · ${passport.sources.reports} project report${passport.sources.reports === 1 ? "" : "s"}` : ""}.</p>
           <CoverageSummary coverage={passport.coverage} />
           <div className="hero-actions">
-            <Link className="button button-light" to={`/placement?preferredRole=${encodeURIComponent(passport.target_role)}`}>View cohort for this role</Link>
             <Link className="button button-light" to={`/passport/${passport.id}/summary`} target="_blank" rel="noopener noreferrer"><FileText size={15} /> Show summary</Link>
           </div>
         </div>
@@ -188,7 +187,7 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
       <div className="facts">
         <div className="fact"><span>Target role</span><b>{passport.target_role}</b></div>
         <div className="fact"><span>Evidence levels</span><b>{verified.filter((sk) => sk.level === "Demonstrated").length} Demonstrated · {verified.filter((sk) => sk.level === "Applied").length} Applied · {verified.filter((sk) => sk.level === "Used").length} Used</b></div>
-        <div className="fact"><span>Code-backed skills</span><b>{verified.length}</b></div>
+        <div className="fact"><span>Code-backed skills</span><b>{verified.filter((skill) => skill.level === "Applied" || skill.level === "Demonstrated").length}</b></div>
         <div className="fact"><span>Unverified claims</span><b>{claimed.length}, never counted</b></div>
       </div>
       {error && <div className="notice notice-error">{error}</div>}
@@ -198,7 +197,7 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
       {passport.generation?.method === "evidence_fallback" && (
         <div className="notice" role="status">
           <strong>Evidence-based fallback</strong>
-          <p>{passport.generation.proposal_warning || "AI code proposals were unavailable."} Document mentions remain Unverified unless repository checks find supporting evidence.</p>
+          <p>{passport.generation.proposal_warning || "AI code proposals were unavailable. Document mentions remain Unverified unless repository checks find supporting evidence."}</p>
         </div>
       )}
       <details className="ladder-legend">

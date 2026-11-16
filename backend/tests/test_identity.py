@@ -193,12 +193,10 @@ def test_proof_for_one_account_does_not_verify_a_passport_for_another(monkeypatc
     assert ownership_signal("p-1", "someone-else", is_demo=False)["status"] == "warn"
 
 
-def test_demo_passports_never_show_ownership_verified(monkeypatch) -> None:
-    # Even a proof recorded against the same id doesn't make a demo passport "ok".
-    prove(monkeypatch, "janedoe", "p-demo")
-    assert ownership_signal("p-demo", "janedoe", is_demo=True)["status"] == "unknown"
-    prove(monkeypatch, "janedoe", "p-real")
-    assert ownership_signal("p-other-demo", "janedoe", is_demo=True)["status"] == "unknown"
+def test_legacy_data_flag_cannot_bypass_ownership(monkeypatch) -> None:
+    prove(monkeypatch, "janedoe", "p-owned")
+    assert ownership_signal("p-owned", "janedoe", is_demo=True)["status"] == "ok"
+    assert ownership_signal("p-unowned", "janedoe", is_demo=True)["status"] == "warn"
 
 
 def test_failed_expired_and_reused_challenges_establish_nothing(monkeypatch) -> None:

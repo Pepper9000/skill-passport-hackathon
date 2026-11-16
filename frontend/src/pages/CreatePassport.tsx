@@ -21,15 +21,6 @@ const steps = [
   "Done",
 ];
 
-/** Per-letter spans for the home headline entrance; the h1 keeps a plain aria-label for screen readers. */
-function headlineLetters(text: string, start: number, extraMs = 0) {
-  let seen = 0;
-  return [...text].map((char, index) => {
-    if (char === " ") return " ";
-    const delay = (start + seen++) * 26 + extraMs;
-    return <span className="headline-letter" style={{ animationDelay: `${delay}ms` }} key={index}>{char}</span>;
-  });
-}
 const HEADLINE_LINE_1 = "Your work speaks.";
 const HEADLINE_LINE_2 = "Now show the proof.";
 
@@ -229,9 +220,9 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
       <section className="create-intro">
         <h1 aria-label="Your work speaks. Now show the proof.">
           <span aria-hidden="true">
-            {headlineLetters(HEADLINE_LINE_1, 0)}
+            {HEADLINE_LINE_1}
             <br />
-            <em>{headlineLetters(HEADLINE_LINE_2, HEADLINE_LINE_1.replace(/ /g, "").length, 420)}</em>
+            <em>{HEADLINE_LINE_2}</em>
           </span>
         </h1>
         <p>Create a skill profile from your GitHub work and resume, with links to the code behind each verified skill.</p>
@@ -246,7 +237,7 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
             <span className="input-wrap"><Github size={17} /><input value={username} onChange={(event) => changeUsername(event.target.value)} placeholder="e.g. octocat" autoComplete="off" /></span>
           </label>
           <label>Target role
-            <select value={role} onChange={(event) => { setRole(event.target.value); setError(""); }} disabled={!roles.length}>
+            <select aria-label="Target role" value={role} onChange={(event) => { setRole(event.target.value); setError(""); }} disabled={!roles.length}>
               {roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               {customRolesEnabled && <option value={JOB_DESCRIPTION_OPTION}>Paste a job description</option>}
             </select>
@@ -292,6 +283,12 @@ export default function CreatePassport({ job, onJobChange, pollingPaused = false
             <small>PDF · Max 10 MB</small>
             <input type="file" accept="application/pdf,.pdf" onChange={(event) => {
               const picked = event.target.files?.[0] ?? null;
+              if (picked && !(picked.type === "application/pdf" || (!picked.type && /\.pdf$/i.test(picked.name)))) {
+                setResume(null);
+                setError("Your resume must be a PDF file.");
+                event.target.value = "";
+                return;
+              }
               if (picked && picked.size > 10 * 1024 * 1024) {
                 setResume(null);
                 setError("Resume PDF must be 10 MB or smaller.");

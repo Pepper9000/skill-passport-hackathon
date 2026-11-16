@@ -157,7 +157,7 @@ export default function StudentSummary() {
                 <span className="summary-meta-label">REPORT DATE</span>
                 <span className="summary-meta-val">{reportDateFormatted}</span>
               </div>
-              {passport.is_demo && <span className="demo-badge">DEMO DATA</span>}
+
             </div>
           </div>
 

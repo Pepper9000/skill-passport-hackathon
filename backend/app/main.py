@@ -43,7 +43,6 @@ from app.config import (
 )
 from app.routes.debug import router as debug_router
 from app.services.badge import create_badge
-from app.services.demo_seed import seed_demo_passports
 from app.services.framework import get_roles, get_skills
 from app.services.gist_ingest import MAX_GIST_URL_LENGTH, parse_gist_url
 from app.services.github_ingest import validate_github_username
@@ -94,7 +93,7 @@ from app.services.storage import (
     get_passport_owner_token_hash,
     get_recruiter_session,
     get_review_requests_by_passports,
-    is_trusted_demo_passport,
+    purge_legacy_seeded_passports,
     list_evidence_review_states,
     list_interview_outcomes,
     list_interview_sessions,
@@ -251,18 +250,8 @@ def startup() -> None:
         raise RuntimeError(
             "RECRUITER_ACCOUNTS must be a JSON object of named keys (each secret at least 32 characters)."
         )
-    if (
-        REQUIRE_RECRUITER_AUTH
-        and config.DEMO_RECRUITER_PASSWORD
-        and config.DEMO_RECRUITER_PASSWORD.strip() in RECRUITER_ACCOUNTS.values()
-    ):
-        raise RuntimeError(
-            "DEMO_RECRUITER_PASSWORD must differ from every named recruiter password."
-        )
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
-        raise RuntimeError(
-            "Configure RECRUITER_ACCOUNTS or DEMO_RECRUITER_PASSWORD before starting in production."
-        )
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
+        raise RuntimeError("Configure RECRUITER_ACCOUNTS before starting in production.")
     if not config.OWNERSHIP_PROOF_SETTING_VALID:
         raise RuntimeError("REQUIRE_OWNERSHIP_PROOF must be true or false.")
     if not config.REQUIRE_OWNERSHIP_PROOF and config.APP_ENV != "development":
@@ -278,7 +267,7 @@ def startup() -> None:
         ]
         if missing:
             raise RuntimeError(f"Missing required production setting(s): {', '.join(missing)}.")
-    seed_demo_passports()
+    purge_legacy_seeded_passports()
     reconcile_interrupted_jobs()
     prune_old_jobs()
     prune_old_rate_limits()
@@ -496,8 +485,6 @@ def _recruiter_id_for_session(authorization: str | None) -> str | None:
     recruiter_id = get_recruiter_session(hashlib.sha256(token.encode()).hexdigest())
     if recruiter_id in RECRUITER_ACCOUNTS:
         return recruiter_id
-    if recruiter_id == config.DEMO_RECRUITER_ID and config.DEMO_RECRUITER_PASSWORD:
-        return recruiter_id
     if recruiter_id == "local-recruiter" and not REQUIRE_RECRUITER_AUTH and RECRUITER_KEY:
         return recruiter_id
     return None
@@ -522,7 +509,7 @@ def require_recruiter(
     - If no credential matches, fails closed with 401.
     Local development may use RECRUITER_KEY or leave recruiter routes open.
     """
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
         raise HTTPException(
             status_code=500,
             detail="Recruiter authentication is not configured.",
@@ -536,8 +523,6 @@ def require_recruiter(
 
 
 def require_recruiter_write(recruiter_id: str = Depends(require_recruiter)) -> str:
-    if recruiter_id == config.DEMO_RECRUITER_ID:
-        raise HTTPException(status_code=403, detail="The demo recruiter account is read-only.")
     return recruiter_id
 
 
@@ -559,8 +544,6 @@ def _require_passport_access(
     authorization: str | None = None,
 ) -> None:
     recruiter_id = _recruiter_id_from_credentials(recruiter_key, authorization)
-    if recruiter_id == config.DEMO_RECRUITER_ID:
-        raise HTTPException(status_code=403, detail="The demo recruiter account cannot re-check passports.")
     if _valid_token_hash(get_passport_owner_token_hash(passport_id), token):
         return
     if recruiter_id:
@@ -937,11 +920,6 @@ def passport(passport_id: str, background_tasks: BackgroundTasks) -> dict:
     return view
 
 
-def _require_demo_passport_access(passport: dict[str, Any], recruiter_id: str) -> None:
-    if recruiter_id == config.DEMO_RECRUITER_ID and not is_trusted_demo_passport(passport["id"]):
-        raise HTTPException(status_code=404, detail="Passport not found.")
-
-
 @app.get("/passport/{passport_id}/review")
 def review_passport(
     passport_id: str,
@@ -949,9 +927,7 @@ def review_passport(
     recruiter_id: str = Depends(require_recruiter),
 ) -> dict:
     stored = _stored_passport(passport_id, background_tasks, queue_backfill=False)
-    _require_demo_passport_access(stored, recruiter_id)
-    if recruiter_id != config.DEMO_RECRUITER_ID:
-        _maybe_queue_depth_backfill(stored, background_tasks)
+    _maybe_queue_depth_backfill(stored, background_tasks)
     return review_view(stored)
 
 
@@ -961,8 +937,7 @@ def passports(
     offset: int = Query(0, ge=0),
     recruiter_id: str = Depends(require_recruiter),
 ) -> dict:
-    demo_only = recruiter_id == config.DEMO_RECRUITER_ID
-    items, total = list_passports_page(limit, offset, demo_only=demo_only)
+    items, total = list_passports_page(limit, offset)
     all_requests = get_review_requests_by_passports([item["id"] for item in items])
     return {
         "items": [student_view(item, all_requests.get(item["id"], [])) for item in items],
@@ -978,8 +953,7 @@ def review_passports(
     offset: int = Query(0, ge=0),
     recruiter_id: str = Depends(require_recruiter),
 ) -> dict:
-    demo_only = recruiter_id == config.DEMO_RECRUITER_ID
-    items, total = list_latest_passports_page(limit, offset, demo_only=demo_only)
+    items, total = list_latest_passports_page(limit, offset)
     all_requests = get_review_requests_by_passports([item["id"] for item in items])
     outcomes = list_interview_outcomes([item["id"] for item in items])
     items = [apply_interview_levels(item, outcomes.get(item["id"], [])) for item in items]
@@ -1199,21 +1173,11 @@ def _recruiter_auth_open() -> bool:
 def recruiter_login(body: RecruiterLoginBody, request: Request) -> dict:
     """Exchange a recruiter key for a short-lived sign-in token (only its hash is stored)."""
     check_rate_limit(request, "recruiter_login", max_requests=10, window_seconds=600)
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.DEMO_RECRUITER_PASSWORD:
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
         raise HTTPException(status_code=500, detail="Recruiter authentication is not configured.")
-    demo_login = (
-        (
-            body.username is None
-            or body.username.strip().lower() == config.DEMO_RECRUITER_USERNAME
-        )
-        and bool(config.DEMO_RECRUITER_PASSWORD)
-        and hmac.compare_digest(
-            body.key.strip().encode(), config.DEMO_RECRUITER_PASSWORD.encode()
-        )
-    )
-    recruiter_id = (
-        config.DEMO_RECRUITER_ID if demo_login else _recruiter_id_for_key(body.key.strip())
-    )
+    recruiter_id = _recruiter_id_for_key(body.key)
+    if recruiter_id and body.username and body.username.strip() != recruiter_id:
+        recruiter_id = None
     if not recruiter_id:
         raise HTTPException(status_code=401, detail="That recruiter password is not valid.")
     token = secrets.token_urlsafe(32)
@@ -1224,7 +1188,7 @@ def recruiter_login(body: RecruiterLoginBody, request: Request) -> dict:
         "token": token,
         "role": "recruiter",
         "recruiter_id": recruiter_id,
-        "read_only": recruiter_id == config.DEMO_RECRUITER_ID,
+        "read_only": False,
         "expires_at": expires_at,
     }
 
@@ -1245,7 +1209,7 @@ def auth_me(
         "role": "recruiter",
         "recruiter_id": recruiter_id,
         "auth_required": not _recruiter_auth_open(),
-        "read_only": recruiter_id == config.DEMO_RECRUITER_ID,
+        "read_only": False,
     }
 
 
@@ -1277,7 +1241,6 @@ def interview_sessions(passport_id: str, recruiter_id: str = Depends(require_rec
     passport = get_passport(passport_id)
     if not passport:
         raise HTTPException(status_code=404, detail="Passport not found.")
-    _require_demo_passport_access(passport, recruiter_id)
     return {"items": [session_view(item, passport) for item in list_interview_sessions(passport_id, recruiter_id)]}
 
 
