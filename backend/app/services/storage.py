@@ -398,8 +398,14 @@ def purge_legacy_seeded_passports() -> None:
         connection.execute("BEGIN IMMEDIATE")
         ids = [row[0] for row in connection.execute("SELECT passport_id FROM trusted_demo_passports")]
         for passport_id in ids:
+            session_ids = [row[0] for row in connection.execute(
+                "SELECT id FROM interview_sessions WHERE passport_id = ?", (passport_id,)
+            )]
+            for session_id in session_ids:
+                connection.execute("DELETE FROM interview_assessments WHERE session_id = ?", (session_id,))
+                connection.execute("DELETE FROM interview_questions WHERE session_id = ?", (session_id,))
             # All related rows with a passport_id belong to these registered fixtures.
-            for table in ("passport_owners", "review_requests", "evidence_requests", "evidence_reviews", "interview_sessions", "jobs"):
+            for table in ("passport_owners", "review_requests", "evidence_requests", "evidence_reviews", "interview_sessions", "jobs", "ownership_challenges"):
                 columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
                 if "passport_id" in columns:
                     connection.execute(f"DELETE FROM {table} WHERE passport_id = ?", (passport_id,))
