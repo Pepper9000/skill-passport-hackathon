@@ -10,6 +10,12 @@ export interface User {
   readOnly?: boolean;
 }
 
+/** Student selection is local UI state; it never grants ownership of a passport. */
+export const PRESET_LOGINS = {
+  student: { username: "student@university.edu", password: "student2026" },
+  recruiter: { username: "recruiter@techcorp.com", password: "recruiter2026" },
+} as const;
+
 export function canAccessRoute(pathname: string, role: UserRole | null): boolean {
   const path = pathname.toLowerCase();
   if (path === "/" || path.startsWith("/passport") || path === "/student") {
@@ -34,7 +40,7 @@ export function parseStoredUser(value: string | null): User | null {
     return typeof saved.id === "string" && !!saved.id.trim() &&
       typeof saved.name === "string" && !!saved.name.trim() &&
       typeof saved.email === "string" && !!saved.email.trim() &&
-      saved.role === "recruiter" &&
+      (saved.role === "recruiter" || saved.role === "student") &&
       typeof saved.title === "string" &&
       typeof saved.organization === "string" &&
       (saved.readOnly === undefined || typeof saved.readOnly === "boolean")

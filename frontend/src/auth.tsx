@@ -6,6 +6,7 @@ import {
   canAccessRoute,
   displayNameFromLogin,
   parseStoredUser,
+  PRESET_LOGINS,
 } from "./authTypes";
 
 export type { User, UserRole };
@@ -63,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { user: null, isLoginModalOpen: false };
     }
   });
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(initialSession.user?.role === "student" ? initialSession.user : null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialSession.isLoginModalOpen);
   const [authError, setAuthError] = useState("");
 
@@ -119,6 +120,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: "Please enter a password." };
     }
 
+    if (trimmedEmail.toLowerCase() === PRESET_LOGINS.student.username) {
+      if (password !== PRESET_LOGINS.student.password) return { success: false, error: "That student password is not valid." };
+      await api.recruiterLogout();
+      setAuthError("");
+      setUser({ id: "student", name: "Student", email: PRESET_LOGINS.student.username, role: "student", title: "Student", organization: "" });
+      setIsLoginModalOpen(false);
+      return { success: true };
+    }
     const result = await recruiterSignIn(password, trimmedEmail);
     if ("error" in result) return { success: false, error: result.error };
     setRecruiter({

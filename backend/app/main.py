@@ -250,8 +250,12 @@ def startup() -> None:
         raise RuntimeError(
             "RECRUITER_ACCOUNTS must be a JSON object of named keys (each secret at least 32 characters)."
         )
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
-        raise RuntimeError("Configure RECRUITER_ACCOUNTS before starting in production.")
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.PRESET_RECRUITER_PASSWORD:
+        raise RuntimeError("Configure RECRUITER_ACCOUNTS or PRESET_RECRUITER_PASSWORD before starting in production.")
+    if config.PRESET_RECRUITER_ID in RECRUITER_ACCOUNTS or (
+        config.PRESET_RECRUITER_PASSWORD and config.PRESET_RECRUITER_PASSWORD in RECRUITER_ACCOUNTS.values()
+    ):
+        raise RuntimeError("The shared recruiter must have a separate account and password.")
     if not config.OWNERSHIP_PROOF_SETTING_VALID:
         raise RuntimeError("REQUIRE_OWNERSHIP_PROOF must be true or false.")
     if not config.REQUIRE_OWNERSHIP_PROOF and config.APP_ENV != "development":
@@ -483,6 +487,8 @@ def _recruiter_id_for_session(authorization: str | None) -> str | None:
     if not token:
         return None
     recruiter_id = get_recruiter_session(hashlib.sha256(token.encode()).hexdigest())
+    if recruiter_id == config.PRESET_RECRUITER_ID and config.PRESET_RECRUITER_PASSWORD:
+        return recruiter_id
     if recruiter_id in RECRUITER_ACCOUNTS:
         return recruiter_id
     if recruiter_id == "local-recruiter" and not REQUIRE_RECRUITER_AUTH and RECRUITER_KEY:
@@ -509,12 +515,12 @@ def require_recruiter(
     - If no credential matches, fails closed with 401.
     Local development may use RECRUITER_KEY or leave recruiter routes open.
     """
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.PRESET_RECRUITER_PASSWORD:
         raise HTTPException(
             status_code=500,
             detail="Recruiter authentication is not configured.",
         )
-    if not REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not RECRUITER_KEY:
+    if not REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not RECRUITER_KEY and not config.PRESET_RECRUITER_PASSWORD:
         return "local-recruiter"
     recruiter_id = _recruiter_id_from_credentials(x_recruiter_key, authorization)
     if not recruiter_id:
@@ -523,6 +529,8 @@ def require_recruiter(
 
 
 def require_recruiter_write(recruiter_id: str = Depends(require_recruiter)) -> str:
+    if recruiter_id == config.PRESET_RECRUITER_ID:
+        raise HTTPException(status_code=403, detail="This recruiter account is read-only.")
     return recruiter_id
 
 
@@ -546,7 +554,7 @@ def _require_passport_access(
     recruiter_id = _recruiter_id_from_credentials(recruiter_key, authorization)
     if _valid_token_hash(get_passport_owner_token_hash(passport_id), token):
         return
-    if recruiter_id:
+    if recruiter_id and recruiter_id != config.PRESET_RECRUITER_ID:
         return
     raise HTTPException(status_code=404, detail="Passport not found.")
 
@@ -1166,17 +1174,22 @@ class RecruiterLoginBody(BaseModel):
 
 def _recruiter_auth_open() -> bool:
     """Development only: no recruiter keys at all, so recruiter routes are open (see require_recruiter)."""
-    return not REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not RECRUITER_KEY
+    return not REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not RECRUITER_KEY and not config.PRESET_RECRUITER_PASSWORD
 
 
 @app.post("/auth/recruiter/login")
 def recruiter_login(body: RecruiterLoginBody, request: Request) -> dict:
     """Exchange a recruiter key for a short-lived sign-in token (only its hash is stored)."""
     check_rate_limit(request, "recruiter_login", max_requests=10, window_seconds=600)
-    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS:
+    if REQUIRE_RECRUITER_AUTH and not RECRUITER_ACCOUNTS and not config.PRESET_RECRUITER_PASSWORD:
         raise HTTPException(status_code=500, detail="Recruiter authentication is not configured.")
-    recruiter_id = _recruiter_id_for_key(body.key)
-    if recruiter_id and body.username and body.username.strip() != recruiter_id:
+    shared_login = (
+        body.username == config.PRESET_RECRUITER_USERNAME
+        and bool(config.PRESET_RECRUITER_PASSWORD)
+        and hmac.compare_digest(body.key.encode(), config.PRESET_RECRUITER_PASSWORD.encode())
+    )
+    recruiter_id = config.PRESET_RECRUITER_ID if shared_login else _recruiter_id_for_key(body.key)
+    if recruiter_id and not shared_login and body.username and body.username.strip() != recruiter_id:
         recruiter_id = None
     if not recruiter_id:
         raise HTTPException(status_code=401, detail="That recruiter password is not valid.")
@@ -1188,7 +1201,7 @@ def recruiter_login(body: RecruiterLoginBody, request: Request) -> dict:
         "token": token,
         "role": "recruiter",
         "recruiter_id": recruiter_id,
-        "read_only": False,
+        "read_only": recruiter_id == config.PRESET_RECRUITER_ID,
         "expires_at": expires_at,
     }
 
@@ -1209,7 +1222,7 @@ def auth_me(
         "role": "recruiter",
         "recruiter_id": recruiter_id,
         "auth_required": not _recruiter_auth_open(),
-        "read_only": False,
+        "read_only": recruiter_id == config.PRESET_RECRUITER_ID,
     }
 
 

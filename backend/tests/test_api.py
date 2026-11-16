@@ -1402,3 +1402,25 @@ def test_public_password_cannot_authenticate_and_wrong_named_identity_is_rejecte
     assert client.get("/passports/review").status_code == 401
     assert client.post("/auth/logout", headers=headers).status_code == 200
     assert client.get("/passports/review", headers=headers).status_code == 401
+
+
+def test_shared_preset_reads_real_passports_but_cannot_write(tmp_path, monkeypatch):
+    client = _review_client(tmp_path, monkeypatch, recruiter_key="")
+    monkeypatch.setattr(main_module, "REQUIRE_RECRUITER_AUTH", True)
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {})
+    monkeypatch.setattr(main_module.config, "PRESET_RECRUITER_PASSWORD", "recruiter2026")
+    storage.save_passport({**fake_passport("real-candidate"), "is_demo": False})
+    assert client.post("/auth/recruiter/login", json={"username": "recruiter@techcorp.com", "key": "wrong"}).status_code == 401
+    result = client.post("/auth/recruiter/login", json={"username": "recruiter@techcorp.com", "key": "recruiter2026"})
+    assert result.status_code == 200
+    assert result.json()["read_only"] is True
+    auth = {"Authorization": "Bearer " + result.json()["token"]}
+    assert client.get("/auth/me", headers=auth).json()["read_only"] is True
+    assert client.get("/passport/real-candidate/review", headers=auth).status_code == 200
+    assert "real-candidate" in {item["id"] for item in client.get("/passports/review", headers=auth).json()["items"]}
+    assert client.post("/passport/real-candidate/evidence-requests", headers=auth, json={"skill_id": "python"}).status_code == 403
+    assert client.post("/passport/real-candidate/interview-sessions", headers=auth).status_code == 403
+    assert client.post("/passport/real-candidate/recheck", headers=auth).status_code == 404
+    monkeypatch.setattr(main_module.config, "PRESET_RECRUITER_PASSWORD", "")
+    monkeypatch.setattr(main_module, "RECRUITER_ACCOUNTS", {"named": "x" * 40})
+    assert client.get("/passport/real-candidate/review", headers=auth).status_code == 401

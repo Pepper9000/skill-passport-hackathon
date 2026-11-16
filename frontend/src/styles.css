@@ -1110,3 +1110,9 @@ p, h1, h2, h3, td, dd { overflow-wrap: anywhere; }
 }
 
 .practice-panel .question p { font-size: 14px; line-height: 1.65; }
+
+.preset-logins { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 18px 0; }
+.preset-login { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+.preset-login span, .preset-login code { font-size: 12px; overflow-wrap: anywhere; color: var(--muted); }
+.preset-login .button { font-size: 12px; padding: 9px; }
+@media (max-width: 480px) { .preset-logins { grid-template-columns: 1fr; } }

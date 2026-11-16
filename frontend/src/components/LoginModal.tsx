@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "../auth";
+import { PRESET_LOGINS } from "../authTypes";
 
 export default function LoginModal() {
   const { user, isLoginModalOpen, closeLoginModal, login, authError } = useAuth();
@@ -96,9 +97,9 @@ export default function LoginModal() {
           <div className="auth-modal-brand-badge">
             <ShieldCheck size={28} />
           </div>
-          <h2 id="auth-modal-title">Recruiter sign-in</h2>
+          <h2 id="auth-modal-title">Sign in</h2>
           <p className="auth-modal-subtitle">
-            Use the account name and access key provided by your administrator. Students can create and view their own passport without signing in.
+            Choose a student or recruiter sign-in below, or use your administrator-provided account. Students can also create a passport without signing in.
           </p>
         </div>
 
@@ -108,6 +109,16 @@ export default function LoginModal() {
           </div>
         )}
 
+        <section className="preset-logins" aria-label="Sign-in options">
+          {(["student", "recruiter"] as const).map((role) => <div className="preset-login" key={role}>
+            <strong>{role === "student" ? "Student" : "Recruiter"}</strong>
+            <span>{PRESET_LOGINS[role].username}</span><code>{PRESET_LOGINS[role].password}</code>
+            <button type="button" className="button button-light" onClick={() => {
+              setEmail(PRESET_LOGINS[role].username); setPassword(PRESET_LOGINS[role].password); setErrorMessage("");
+              submitButtonRef.current?.focus();
+            }}>Use {role} sign-in</button>
+          </div>)}
+        </section>
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="auth-field">
             <label htmlFor="auth-email">Account name</label>
