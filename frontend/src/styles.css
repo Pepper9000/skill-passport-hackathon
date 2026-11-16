@@ -1108,3 +1108,5 @@ p, h1, h2, h3, td, dd { overflow-wrap: anywhere; }
   .summary-paper code { background: #f1f5f9 !important; }
   .summary-paper .ladder-pill { background: #e2e8f0 !important; color: #111 !important; }
 }
+
+.practice-panel .question p { font-size: 14px; line-height: 1.65; }

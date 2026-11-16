@@ -251,7 +251,7 @@ export default function StudentPassport({ audience = "student" }: { audience?: A
           {audience === "student" && kitUnavailable(passport) && <section className="panel practice-panel"><h2>Practice questions</h2><p className="notice notice-warning">{KIT_UNAVAILABLE}</p></section>}
           {audience === "student" && passport.interview_kit.length > 0 && (
             <section className="panel practice-panel">
-              <div className="panel-heading"><div><div className="eyebrow">DEFEND YOUR WORK</div><h2>Practice questions</h2></div><span className="count-tag">{passport.interview_kit.length} skills</span></div>
+              <div className="panel-heading"><div><div className="eyebrow">DEFEND YOUR WORK</div><h2>Practice questions</h2></div><span className="count-tag">{passport.interview_kit.length} skill{passport.interview_kit.length === 1 ? "" : "s"}</span></div>
               <p className="muted">Questions about your own cited code, to help you prepare. A recruiter may ask different questions about any of your work.</p>
               {passport.interview_kit.map((entry) => (
                 <article className="interview-entry" key={entry.skill_id}>
